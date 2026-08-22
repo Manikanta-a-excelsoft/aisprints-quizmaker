@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { verifyPassword } from "@/lib/password";
 import { DuplicateUserError } from "@/lib/services/user-service";
 
 import { POST } from "./route";
@@ -35,7 +36,7 @@ const CREATED_USER = {
 	lastName: "Lovelace",
 	username: "ada",
 	email: "ada@example.com",
-	passwordHash: "sha256-placeholder$deadbeef",
+	passwordHash: "pbkdf2-sha256$100000$c2FsdHlzYWx0eXNhbHQ=$ZGVyaXZlZGtleQ==",
 	createdAt: "2026-08-22 10:00:00",
 	updatedAt: "2026-08-22 10:00:00",
 };
@@ -102,6 +103,30 @@ describe("POST /api/auth/register", () => {
 			username: "ada",
 			email: "ada@example.com",
 		});
+	});
+
+	it("stores a PBKDF2 hash that verifies against the submitted password", async () => {
+		createUser.mockResolvedValue(CREATED_USER);
+
+		await POST(request(VALID_BODY));
+
+		const { passwordHash } = createUser.mock.calls[0][0];
+		expect(passwordHash.startsWith("pbkdf2-sha256$")).toBe(true);
+		await expect(verifyPassword(PASSWORD, passwordHash)).resolves.toBe(true);
+		await expect(verifyPassword("something else", passwordHash)).resolves.toBe(false);
+	});
+
+	it("salts each registration, so the same password is stored differently", async () => {
+		createUser.mockResolvedValue(CREATED_USER);
+
+		await POST(request(VALID_BODY));
+		await POST(request({ ...VALID_BODY, username: "ada2", email: "ada2@example.com" }));
+
+		const [first, second] = createUser.mock.calls.map(
+			(call) => call[0].passwordHash,
+		);
+		expect(first).not.toBe(second);
+		await expect(verifyPassword(PASSWORD, second)).resolves.toBe(true);
 	});
 
 	it.each([

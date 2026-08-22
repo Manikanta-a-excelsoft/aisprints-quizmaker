@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { hashPasswordPlaceholder } from "@/lib/password-placeholder";
+import { hashPassword } from "@/lib/password";
 
 import { POST } from "./route";
 
@@ -37,7 +37,7 @@ async function storedUser() {
 		lastName: "Lovelace",
 		username: "ada",
 		email: "ada@example.com",
-		passwordHash: await hashPasswordPlaceholder(PASSWORD),
+		passwordHash: await hashPassword(PASSWORD),
 		createdAt: "2026-08-22 10:00:00",
 		updatedAt: "2026-08-22 10:00:00",
 	};
@@ -152,6 +152,19 @@ describe("POST /api/auth/login", () => {
 
 		expect(response.status).toBe(500);
 		await expect(response.json()).resolves.toEqual({ error: "Could not sign in" });
+	});
+
+	it("returns 401 for an account still holding a Phase 3 placeholder hash", async () => {
+		findUserByUsername.mockResolvedValue({
+			...(await storedUser()),
+			passwordHash:
+				"sha256-placeholder$c4bbcb1fbec99d65bf59d85c8cb62ee2db963f0fe106f483d9afa73bd4e39a8a",
+		});
+
+		const response = await POST(request({ username: "ada", password: PASSWORD }));
+
+		expect(response.status).toBe(401);
+		await expect(response.json()).resolves.toEqual({ error: "Invalid credentials" });
 	});
 
 	it("sets no cookie, since this sprint has no session management", async () => {

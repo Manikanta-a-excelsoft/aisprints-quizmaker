@@ -1,4 +1,4 @@
-import { verifyPasswordPlaceholder } from "@/lib/password-placeholder";
+import { verifyPassword } from "@/lib/password";
 import { findUserByUsername, toPublicUser } from "@/lib/services/user-service";
 import { fieldErrors, loginSchema } from "@/lib/validation/auth";
 
@@ -39,10 +39,7 @@ export async function POST(request: Request): Promise<Response> {
 			return Response.json({ error: INVALID_CREDENTIALS }, { status: 401 });
 		}
 
-		const passwordMatches = await verifyPasswordPlaceholder(
-			password,
-			user.passwordHash,
-		);
+		const passwordMatches = await verifyPassword(password, user.passwordHash);
 
 		if (!passwordMatches) {
 			return Response.json({ error: INVALID_CREDENTIALS }, { status: 401 });

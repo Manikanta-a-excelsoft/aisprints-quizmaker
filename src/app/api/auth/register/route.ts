@@ -1,4 +1,4 @@
-import { hashPasswordPlaceholder } from "@/lib/password-placeholder";
+import { hashPassword } from "@/lib/password";
 import {
 	DuplicateUserError,
 	createUser,
@@ -36,7 +36,7 @@ export async function POST(request: Request): Promise<Response> {
 			lastName,
 			username,
 			email,
-			passwordHash: await hashPasswordPlaceholder(password),
+			passwordHash: await hashPassword(password),
 		});
 
 		return Response.json({ user: toPublicUser(user) }, { status: 201 });

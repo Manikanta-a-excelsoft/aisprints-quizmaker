@@ -1,6 +1,7 @@
 Date created: Aug 22, 2026
-Date last modified: Aug 22, 2026 (night - Phase 3 COMPLETED; three auth endpoints built,
-verified by 90 tests, a clean build, and manual curl against local D1)
+Date last modified: Aug 22, 2026 (late night - Phase 4 COMPLETED; PBKDF2-SHA256 hashing
+replaced the placeholder and the auth UI was built, verified by 146 tests, a clean lint,
+and a clean build)
 
 # Register, Login, Logout - Technical PRD
 
@@ -344,12 +345,13 @@ database, so later phases have somewhere to write tests and store users.
 - Migration applied to local D1 with `--local` only - done; the remote database has never
   been migrated
 
-**Open follow-up for Phase 4**: `vitest.config.ts` uses `pool: "threads"` and
-`environment: "node"` because the default `forks` pool would not start a worker before the
-Wrangler upgrade. That failure may have shared a root cause with the `workerd` crash, so it
-is worth re-testing the defaults when the first jsdom component test is written. The jsdom
-setup cost of roughly 45 seconds was measured separately and is a real reason to keep
-opting in per file regardless.
+**Open follow-up for Phase 4 - now closed**: `vitest.config.ts` used `pool: "threads"`
+because the default `forks` pool would not start a worker before the Wrangler upgrade.
+Re-tested in Phase 4 once jsdom tests existed: `npx vitest run --pool=forks` now passes all
+146 tests, so that failure did share a root cause with the `workerd` crash. `threads` was
+kept anyway because it is still slightly faster here (16.9s against 19.8s), and the config
+comment now records that rather than implying `forks` is broken. Per-file jsdom opt-in was
+also kept; environment setup is 22s of a full run even with only four jsdom files.
 
 ### Phase 2: User Service - COMPLETED
 
@@ -505,32 +507,117 @@ PBKDF2-SHA256 and a random per-user salt, deletes this file, and updates both ro
 account registered before that point has a `sha256-placeholder$` hash and must be
 recreated; the prefix makes those rows easy to find.
 
-### Phase 4: Auth UI and Password Hashing - PLANNED
+### Phase 4: Auth UI and Password Hashing - COMPLETED
 
 **Objective**: A teacher can register and log in through the browser, and the database
 contains only hashed passwords.
 
-**Tasks**:
-1. **Red**: write `src/lib/password.test.ts` asserting that hashing the same password
-   twice yields different stored values (unique salt), that verification succeeds for the
-   correct password, that it fails for a wrong password, and that the plaintext never
-   appears in the stored string.
-2. **Green**: implement `src/lib/password.ts` with `hashPassword` and `verifyPassword`
-   using Web Crypto PBKDF2-SHA256, and wire them into the register and login routes.
-3. **Red**: write smoke tests for the register and login client components asserting the
-   fields render with accessible labels and that a validation error is displayed, queried
-   by role and accessible name per the testing skill.
-4. **Green**: build `src/app/register/page.tsx`, `src/app/login/page.tsx`,
-   `src/app/mcq/page.tsx`, and the logout button, from the shadcn blocks Manikanta
-   provides, adapted to the installed Base UI components.
-5. Replace `src/app/page.tsx` with a redirect to `/login`.
-6. Run `npm test`, `npm run lint`, `npm run build`.
+**What was built** (Aug 22, 2026, late night):
+
+1. **Red**: wrote `src/lib/password.test.ts`, 20 tests, and confirmed the suite failed with
+   `Cannot find module './password'`.
+2. **Green**: implemented `src/lib/password.ts` with `hashPassword` and `verifyPassword`
+   over Web Crypto PBKDF2-SHA256. All 20 passed.
+3. Wired both functions into the register and login routes, deleted
+   `src/lib/password-placeholder.ts`, and extended the route tests: the register route now
+   has to produce a hash that `verifyPassword` accepts and a different hash for each
+   registration of the same password, and the login route has to answer 401 for an account
+   still holding a `sha256-placeholder$` value.
+4. **Red**: wrote the client tests before the components -
+   `src/lib/auth-client.test.ts`, `login-form.test.tsx`, `register-form.test.tsx`,
+   `logout-button.test.tsx`, `src/app/mcq/page.test.tsx`, and `src/app/page.test.ts`.
+   Confirmed each failed on the missing module, and that the root-redirect test failed
+   against the untouched starter page.
+5. **Green**: built `src/lib/auth-client.ts`, the three components, the three pages, and
+   the root redirect. All 146 tests pass.
+
+**Files**:
+
+- `src/lib/password.ts` - `hashPassword`, `verifyPassword`
+- `src/lib/auth-client.ts` - `postAuth`, shared by both forms
+- `src/components/auth/login-form.tsx`, `register-form.tsx`, `logout-button.tsx`
+- `src/app/login/page.tsx`, `src/app/register/page.tsx`, `src/app/mcq/page.tsx`
+- `src/app/page.tsx` - now only `redirect("/login")`
+- Deleted: `src/lib/password-placeholder.ts`
+- Colocated tests beside each of the above
+
+**Stored password format**: `pbkdf2-sha256$<iterations>$<base64 salt>$<base64 key>`, with
+100,000 iterations, a 16-byte salt from `crypto.getRandomValues`, and a 256-bit derived
+key. The salt and the iteration count are stored alongside the hash so the cost can be
+raised later without invalidating existing accounts, and so verification needs no
+configuration to stay in step with old rows.
+
+**Design decisions worth recording**:
+
+- Web Crypto rather than a native module, because this runs on the Workers runtime where
+  Node's `crypto` is unavailable. No dependency was added.
+- `verifyPassword` returns `false` rather than throwing for malformed input, unknown
+  algorithms, bad base64, and the Phase 3 `sha256-placeholder$` values. A hashing failure
+  therefore surfaces as a normal 401 and cannot turn into a 500 that distinguishes one
+  stored row from another.
+- The derived key is compared with a constant-time XOR accumulation rather than `===`, so
+  the comparison does not leak how many leading bytes matched.
+- Both forms validate with the same `registerSchema` and `loginSchema` the routes use and
+  post `parsed.data`, so the client cannot drift from the server and the server receives
+  values already trimmed by Zod.
+- Server field errors are rendered against the matching input; a server `error` with no
+  `fields` is rendered once above the form. `postAuth` decides which of the two applies, so
+  the two forms cannot disagree about it.
+- Forms carry `noValidate`, so the Zod messages are what the user sees rather than browser
+  validation bubbles, and what the tests assert against.
+- Logout navigates to `/login` even when the request fails. There is no session to clear,
+  so a network error must not trap the user on the quiz page.
+- Successful login navigates and leaves the submit button disabled, rather than restoring
+  it for the moment before the route changes.
+
+**shadcn/Base UI components used**: no block code was supplied for this phase, so the pages
+were composed from the components already installed by Phase 0 rather than pasted from a
+block. Login and register are the shadcn `card` + `field` form layout: `Card`,
+`CardHeader`, `CardTitle`, `CardDescription`, `CardContent`, `CardFooter`, `FieldGroup`,
+`Field`, `FieldLabel`, `FieldDescription`, `FieldError`, `Input`, and `Button`, with
+`Label` reached through `FieldLabel`. The MCQ stub uses `Card` and `Badge`, and the logout
+control is `Button` with `variant="outline"`. `FieldError` was a good fit as installed: it
+already renders `role="alert"` and accepts an `errors` array, so the accessible error
+wiring is `aria-invalid` plus `aria-describedby` on the input and nothing more.
+
+**Testing notes**:
+
+- The four component suites opt into jsdom per file with `// @vitest-environment jsdom`.
+  Measured environment cost across the whole 13-file run was 22s, so the per-file opt-in is
+  still worth keeping.
+- Queries are by role and accessible name, except the password inputs, which have no
+  accessible role and are found with `getByLabelText`.
+- `next/navigation` is mocked so `router.push` can be asserted; `next/link` renders as-is
+  without a router provider and needed no mock.
+- `fetch` is stubbed per test with `vi.stubGlobal`. One test resolves it manually to hold
+  the request open and assert the button reads "Signing in…" and is disabled mid-flight.
+- Both forms are asserted never to echo the submitted password into the page text.
+
+**Verified**:
+- `npm test` - 146 tests passing in 13 files (56 new, 90 from Phases 1 to 3), 16.88s
+- `npm run lint` - clean, exit 0, no output
+- `npm run build` - succeeded, TypeScript clean; `/`, `/login`, `/mcq`, and `/register`
+  prerendered as static, the three API routes listed as dynamic
+- Not yet done, and left for Phase 5: walking the flow in a browser and re-querying local
+  D1 to confirm the stored value now starts with `pbkdf2-sha256$`
 
 **Deliverables**:
-- `src/lib/password.ts` and its tests
-- Register, login, and MCQ stub pages plus the logout control
-- `src/app/page.tsx` redirecting to `/login`
-- Phase 4 marker updated, including which shadcn block each page came from
+- `src/lib/password.ts` and its tests - done
+- Register, login, and MCQ stub pages plus the logout control - done
+- `src/app/page.tsx` redirecting to `/login` - done
+- Phase 4 marker updated, including which components each page came from - done
+
+**Note for anyone with an existing local account**: accounts created during Phase 3 hold a
+`sha256-placeholder$` hash. `verifyPassword` rejects that format outright, so those
+accounts can no longer log in and must be registered again. The prefix makes the affected
+rows easy to find:
+`npx wrangler d1 execute quizmaker-db --local --command "SELECT username FROM users WHERE password_hash LIKE 'sha256-placeholder$%'"`.
+Deleting them and registering again is the intended fix; there is no migration path,
+because the placeholder hash cannot be converted into a PBKDF2 one without the plaintext.
+
+**Deliberately not built**: no cookie, no JWT, no session store, and no middleware. Login
+verifies the credentials and navigates, and nothing downstream knows who is signed in. That
+is this sprint's documented scope, and it is why `/mcq` is reachable directly by URL.
 
 ### Phase 5: Verification and Documentation - PLANNED
 
@@ -660,11 +747,12 @@ Built in Phase 3:
 - `src/lib/password-placeholder.ts` - temporary SHA-256 hashing, deleted in Phase 4
 - `route.test.ts` beside each route - 28 tests with the user service mocked
 
-Planned for later phases:
-- `src/lib/password.ts` - hashing and verification
-- `src/app/api/auth/register/route.ts` - account creation endpoint
-- `src/app/api/auth/login/route.ts` - credential check endpoint
-- `src/app/api/auth/logout/route.ts` - logout acknowledgement
+Built in Phase 4:
+
+- `src/lib/password.ts` - PBKDF2-SHA256 hashing and verification, 20 tests
+- `src/lib/auth-client.ts` - the forms' one way of posting to the auth API, 7 tests
+- `src/components/auth/login-form.tsx`, `register-form.tsx`, `logout-button.tsx` - client
+  components, 26 jsdom tests between them
 - `src/app/login/page.tsx`, `src/app/register/page.tsx`, `src/app/mcq/page.tsx` - UI
 - `src/app/page.tsx` - redirect to `/login`
 
@@ -773,20 +861,23 @@ still requires a fresh conversation before it is installed.
 - [x] No API response body and no log line contains `password_hash` or a plaintext
       password (responses shaped through `toPublicUser`; `console.error` receives a label
       and the error only, never the request body)
-- [x] Querying the local database confirms `password_hash` is a hash, not the password
-      (currently the Phase 3 placeholder hash; to be re-confirmed after Phase 4 swaps in
-      PBKDF2)
-- [ ] Hashing the same password twice produces different stored values (Phase 4; the
-      current placeholder is unsalted and deliberately does not satisfy this)
-- [ ] `/register` and `/login` render with shadcn components and show field-level errors
-- [ ] A teacher can register in the browser and land on the MCQ stub
-- [ ] The MCQ stub states that question creation arrives next sprint and creates no
+- [ ] Querying the local database confirms `password_hash` is a hash, not the password
+      (held for Phase 5: confirmed for the Phase 3 placeholder hash, not yet re-queried
+      since PBKDF2 landed)
+- [x] Hashing the same password twice produces different stored values (`src/lib/password.test.ts`
+      asserts three hashes of one password are all distinct, with distinct salts)
+- [x] `/register` and `/login` render with shadcn components and show field-level errors
+      (asserted by role and accessible name in the two form test suites)
+- [ ] A teacher can register in the browser and land on the MCQ stub (the components and
+      the navigation are tested; the browser walkthrough is Phase 5)
+- [x] The MCQ stub states that question creation arrives next sprint and creates no
       questions
 - [ ] Logging out returns the teacher to `/login`, and logging back in with the same
-      credentials succeeds
-- [ ] `/` redirects to `/login` and the Next.js starter page is gone
-- [ ] `npm run lint` passes with no new errors
-- [ ] `npm run build` succeeds
+      credentials succeeds (both halves tested at component level; browser walkthrough is
+      Phase 5)
+- [x] `/` redirects to `/login` and the Next.js starter page is gone
+- [x] `npm run lint` passes with no new errors
+- [x] `npm run build` succeeds
 - [ ] `npm run preview` serves the app on the Workers runtime and the full flow works
       there
 - [ ] No cookie is set, no token is issued, and no session store exists anywhere in the
@@ -927,8 +1018,11 @@ two may have shared a root cause.
 **Solution**: `vitest.config.ts` sets `pool: "threads"` and `environment: "node"`. This
 diverges from the testing skill, which specifies `jsdom` globally. Phase 4's component
 tests opt in per file with `// @vitest-environment jsdom` at the top, paying the jsdom cost
-only where a DOM is actually needed. Worth re-testing the `forks` default in Phase 4 now
-that the Wrangler upgrade has settled the native crash.
+only where a DOM is actually needed.
+**Update from Phase 4**: `--pool=forks` was re-tested once the jsdom tests existed and now
+passes all 146 tests, which supports the shared-root-cause theory. `threads` was kept
+because it is still marginally faster (16.9s against 19.8s). Measured jsdom cost is also
+lower than the original 45s estimate: 22s of environment setup across a 13-file run.
 **Code Reference**: `vitest.config.ts`
 
 ### `npm install` fails with ERESOLVE on @vitejs/plugin-react (hit in Phase 1, fixed)
@@ -1024,29 +1118,31 @@ before assuming the command is broken.
 
 ## Current Status
 
-**Last Updated**: Aug 22, 2026 (night, after Phase 3 completion)
-**Current Phase**: Phase 3 - Auth API Routes, COMPLETED
-**Branch**: `feature/register-login-logout`, branched from `main`. Phase 1 is committed
-locally as `0a46303` but not yet pushed, because no GitHub credentials are available in the
-agent's shell; Manikanta will push. Phases 2 and 3 are uncommitted and awaiting his review.
-**Status**: Phases 1, 2, and 3 COMPLETED with no outstanding blockers. 90 tests pass, the
-production build succeeds, and lint is clean. Register, login, and logout all work against
-the real local D1, confirmed by curl. The one deliberate gap is password hashing: register
-currently uses an unsalted SHA-256 placeholder, which Phase 4 replaces with PBKDF2.
+**Last Updated**: Aug 22, 2026 (late night, after Phase 4 completion)
+**Current Phase**: Phase 4 - Auth UI and Password Hashing, COMPLETED
+**Branch**: `feature/register-login-logout`, branched from `main`. Phases 1 to 3 are
+committed locally as `0a46303`, `5330139`, and `805432d`, none of them pushed, because no
+GitHub credentials are available in the agent's shell; Manikanta will push. Phase 4 is
+uncommitted and awaiting his review. (The Phase 3 status block claimed Phases 2 and 3 were
+uncommitted; `git log` shows they were committed after that was written.)
+**Status**: Phases 1 to 4 COMPLETED with no outstanding blockers. 146 tests pass, lint is
+clean, and the production build succeeds. Passwords are now stored as PBKDF2-SHA256 with a
+random per-user salt, and the placeholder module is deleted. The browser walkthrough and the
+`npm run preview` run on the Workers runtime are deliberately left to Phase 5, so no
+end-to-end claim is made here beyond what the tests and the build prove.
 **Dependency decisions**: All settled as of Aug 22, 2026 - the Vitest set (Phase 1),
-`zod` (Phase 3), and Web Crypto PBKDF2-SHA256 hashing (Phase 4) are approved. No open
-decisions remain; anything not on that list still needs approval before it is installed.
+`zod` (Phase 3), and Web Crypto PBKDF2-SHA256 hashing (Phase 4) are approved. Phase 4 added
+no new dependency. Anything not on that list still needs approval before it is installed.
 `@vitejs/plugin-react` is pinned to `^5` and `wrangler` was upgraded to `^4.125.0`, both
 for reasons recorded in Troubleshooting.
-**Next Steps**: Manikanta reviews Phase 3. Nothing is committed for it until he approves.
-Phase 4 does not start until he says "go Phase 4", and it needs the shadcn sign-up and login
-block code from him. Phase 4 must also delete `src/lib/password-placeholder.ts` and rewire
-both routes to the real PBKDF2 implementation.
+**Next Steps**: Manikanta reviews Phase 4. Nothing is committed until he approves, and
+Phase 5 does not start until he says so. Anyone with a local account from Phase 3 has to
+delete it and register again; see the note at the end of Phase 4.
 
 **Phase Status Summary**:
 
 - Phase 1 - Database and Test Setup: COMPLETED
 - Phase 2 - User Service: COMPLETED
 - Phase 3 - Auth API Routes: COMPLETED
-- Phase 4 - Auth UI and Password Hashing: PLANNED
+- Phase 4 - Auth UI and Password Hashing: COMPLETED
 - Phase 5 - Verification and Documentation: PLANNED
