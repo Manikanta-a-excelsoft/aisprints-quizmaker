@@ -1,6 +1,6 @@
 Date created: Aug 22, 2026
-Date last modified: Aug 22, 2026 (evening - Phase 1 COMPLETED; workerd unblocked,
-migration applied to local D1, DB binding typed)
+Date last modified: Aug 22, 2026 (night - Phase 2 COMPLETED; user service and its mocked-D1
+tests in place, 62 tests passing)
 
 # Register, Login, Logout - Technical PRD
 
@@ -349,28 +349,71 @@ is worth re-testing the defaults when the first jsdom component test is written.
 setup cost of roughly 45 seconds was measured separately and is a real reason to keep
 opting in per file regardless.
 
-### Phase 2: User Service - PLANNED
+### Phase 2: User Service - COMPLETED
 
 **Objective**: All database access for users lives behind one testable module, so no route
 handler or component ever touches `env.DB` directly.
 
-**Tasks**:
-1. **Red**: write `src/lib/services/user-service.test.ts` covering `createUser`,
-   `findUserById`, `findUserByUsername`, `findUserByEmail`, `updateUser`, and
-   `deleteUser`. Mock `@opennextjs/cloudflare` so `getCloudflareContext()` returns a fake
-   `env.DB`, per the testing skill. Cover the failure paths: a lookup that finds nothing
-   returns `null`, a duplicate username surfaces as a distinguishable error, and
-   `updateUser` sets `updated_at`.
-2. **Green**: implement `src/lib/services/user-service.ts` with a `User` type and the six
-   functions, using prepared statements with numbered placeholders (`?1`, `?2`) and
-   reading `results[0]` rather than `first()`, per `d1.mdc`.
-3. Confirm no test reaches a real database.
-4. Run `npm test`, report actual output.
+**What was built** (Aug 22, 2026):
+
+1. **Red**: wrote `src/lib/services/user-service.test.ts` first, 29 tests. Confirmed the
+   whole suite failed with `Cannot find module '/src/lib/services/user-service'` before any
+   implementation existed, while Phase 1's 33 tests kept passing.
+2. **Green**: implemented `src/lib/services/user-service.ts` exporting the six functions
+   plus supporting types. All 62 tests pass.
+
+**Exported surface** (`src/lib/services/user-service.ts`):
+
+| Export | Signature | Notes |
+|---|---|---|
+| `createUser` | `(input: CreateUserInput) => Promise<User>` | `INSERT ... RETURNING`, so the generated `id` and timestamps come back in one round trip |
+| `findUserById` | `(id: string) => Promise<User \| null>` | `null` when nothing matches |
+| `findUserByUsername` | `(username: string) => Promise<User \| null>` | `null` when nothing matches |
+| `findUserByEmail` | `(email: string) => Promise<User \| null>` | `null` when nothing matches |
+| `updateUser` | `(id: string, changes: UpdateUserInput) => Promise<User \| null>` | Writes only the supplied columns, always sets `updated_at`, `null` if the id does not exist |
+| `deleteUser` | `(id: string) => Promise<boolean>` | `true` only when a row was actually removed, read from `meta.changes` |
+| `toPublicUser` | `(user: User) => PublicUser` | Strips `passwordHash`; the single safe way for Phase 3 to build a response body |
+| `DuplicateUserError` | `class`, carries `field: "username" \| "email"` | Lets Phase 3 answer 400 rather than 500 |
+| `User`, `PublicUser`, `CreateUserInput`, `UpdateUserInput` | types | `User` is the full row including `passwordHash` |
+
+**Design decisions worth recording**:
+
+- `User` includes `passwordHash` because Phase 3's login has to compare against the stored
+  hash, and this module is the only way to reach the database. `PublicUser` and
+  `toPublicUser()` exist so a route never has to hand-strip the field. The acceptance
+  criterion about responses never carrying `password_hash` is enforced at the route layer
+  in Phase 3, using `toPublicUser`.
+- D1 reports a unique violation as an error message rather than a typed error, so
+  `asDuplicateUserError` parses the column out of
+  `UNIQUE constraint failed: users.<column>` and converts it to `DuplicateUserError`.
+  Anything else is rethrown untouched, so a real fault still becomes a 500.
+- `updateUser` builds its `SET` clause dynamically but numbers placeholders as it goes, so
+  a three-column update produces `?1, ?2, ?3` with the id as `?4`. Column names come from a
+  fixed internal list, never from caller input. An update with no fields throws instead of
+  emitting invalid SQL.
+
+**Testing notes**:
+
+- `@opennextjs/cloudflare` is mocked so `getCloudflareContext()` yields a fake `env.DB`.
+  No test touches a real database; the fake records every statement and its bindings and
+  returns queued rows, run results, or errors.
+- The fake's `first()` throws on use, which turns the `d1.mdc` rule into something the
+  suite enforces rather than something a reviewer has to spot. Verified by temporarily
+  switching `findUserBy` to `first()`, which failed the lookup tests with
+  "first() must not be used", then reverting.
+- Two convention tests assert across every recorded statement that no anonymous `?`
+  placeholder is ever used, and that a multi-column update numbers placeholders
+  consecutively from `?1`.
+
+**Verified**:
+- `npm test` - 62 tests passing in 3 files (29 new, 33 from Phase 1)
+- `npm run lint` - clean, exit 0
+- `npx tsc --noEmit` - clean, exit 0
 
 **Deliverables**:
-- `src/lib/services/user-service.ts`
-- `src/lib/services/user-service.test.ts` passing
-- Phase 2 marker and code references updated here
+- `src/lib/services/user-service.ts` - done
+- `src/lib/services/user-service.test.ts` passing - done
+- Phase 2 marker and code references updated here - done
 
 **Note**: Password hashing is *not* part of this phase. The service accepts an
 already-hashed `passwordHash` and stores it verbatim. Hashing arrives in Phase 4.
@@ -480,9 +523,14 @@ Built in Phase 1:
   real constraint behavior, 17 tests
 - `wrangler.jsonc` - `d1_databases` block binding `quizmaker-db` as `DB`
 
-Planned for later phases:
+Built in Phase 2:
 
-- `src/lib/services/user-service.ts` - all D1 access for users
+- `src/lib/services/user-service.ts` - the only module that touches `env.DB` for users;
+  six functions plus `toPublicUser` and `DuplicateUserError`
+- `src/lib/services/user-service.test.ts` - 29 tests against a fake D1 that records every
+  statement and rejects `first()`
+
+Planned for later phases:
 - `src/lib/password.ts` - hashing and verification
 - `src/app/api/auth/register/route.ts` - account creation endpoint
 - `src/app/api/auth/login/route.ts` - credential check endpoint
@@ -577,11 +625,12 @@ still requires a fresh conversation before it is installed.
 - [x] `npm test` runs and every test passes
 - [x] Each phase's tests were written before its implementation and observed failing first
       (Phase 1: `migrations.test.ts` red first; `schema.test.ts` was added after and had
-      its failure mode verified separately)
-- [ ] The user service covers create, update, delete, and find by id, username, and email,
+      its failure mode verified separately. Phase 2: `user-service.test.ts` red first)
+- [x] The user service covers create, update, delete, and find by id, username, and email,
       each with passing tests against a mocked D1
-- [ ] Every user query uses a prepared statement with numbered placeholders and no
-      concatenated user input
+- [x] Every user query uses a prepared statement with numbered placeholders and no
+      concatenated user input (asserted across every recorded statement by a convention
+      test in `src/lib/services/user-service.test.ts`)
 - [ ] `POST /api/auth/register` returns 201 with the created user on success
 - [ ] `POST /api/auth/register` returns 400 for invalid input and for a duplicate username
       or email
@@ -839,28 +888,28 @@ before assuming the command is broken.
 
 ## Current Status
 
-**Last Updated**: Aug 22, 2026 (evening, after Phase 1 completion)
-**Current Phase**: Phase 1 - Database and Test Setup, COMPLETED
-**Branch**: `feature/register-login-logout`, branched from `main`. Nothing committed yet;
-Phase 1 is awaiting Manikanta's review.
-**Status**: COMPLETED with no outstanding blockers. The test harness, the `users`
-migration, and the `DB` binding are built and verified by 33 passing tests, clean lint, and
-a clean typecheck. The migration is applied to the local D1 database with `--local` only,
-and `cloudflare-env.d.ts` now types `env.DB` as `D1Database`. The earlier `workerd` crash
-was cleared by upgrading Wrangler to 4.125.0.
+**Last Updated**: Aug 22, 2026 (night, after Phase 2 completion)
+**Current Phase**: Phase 2 - User Service, COMPLETED
+**Branch**: `feature/register-login-logout`, branched from `main`. Phase 1 is committed
+locally as `0a46303` but not yet pushed, because no GitHub credentials are available in the
+agent's shell; Manikanta will push. Phase 2 is uncommitted and awaiting his review.
+**Status**: Phases 1 and 2 COMPLETED with no outstanding blockers. 62 tests pass, lint is
+clean, and the typecheck is clean. The `users` table is applied to local D1 with `--local`
+only, `env.DB` is typed, and all user database access now sits behind
+`src/lib/services/user-service.ts`.
 **Dependency decisions**: All settled as of Aug 22, 2026 - the Vitest set (Phase 1),
 `zod` (Phase 3), and Web Crypto PBKDF2-SHA256 hashing (Phase 4) are approved. No open
 decisions remain; anything not on that list still needs approval before it is installed.
 `@vitejs/plugin-react` is pinned to `^5` and `wrangler` was upgraded to `^4.125.0`, both
 for reasons recorded in Troubleshooting.
-**Next Steps**: Manikanta reviews Phase 1 and, once satisfied, approves the commit to
-`feature/register-login-logout`. Phase 2, the user service against a mocked D1, does not
-start until he says "go Phase 2".
+**Next Steps**: Manikanta reviews Phase 2. Nothing is committed for it until he approves.
+Phase 3, the auth API routes, does not start until he says "go Phase 3". Phase 3 will
+install `zod` and consume `toPublicUser` and `DuplicateUserError` from the user service.
 
 **Phase Status Summary**:
 
 - Phase 1 - Database and Test Setup: COMPLETED
-- Phase 2 - User Service: PLANNED
+- Phase 2 - User Service: COMPLETED
 - Phase 3 - Auth API Routes: PLANNED
 - Phase 4 - Auth UI and Password Hashing: PLANNED
 - Phase 5 - Verification and Documentation: PLANNED
