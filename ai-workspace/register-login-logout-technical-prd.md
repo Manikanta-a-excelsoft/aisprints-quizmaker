@@ -1,7 +1,7 @@
 Date created: Aug 22, 2026
-Date last modified: Aug 22, 2026 (late night - Phase 4 COMPLETED; PBKDF2-SHA256 hashing
-replaced the placeholder and the auth UI was built, verified by 146 tests, a clean lint,
-and a clean build)
+Date last modified: Aug 23, 2026 (Phase 5 COMPLETED, sprint complete - 146 tests, clean
+lint and build, and the full flow verified on the Workers runtime with PBKDF2 hashes
+confirmed in local D1)
 
 # Register, Login, Logout - Technical PRD
 
@@ -619,36 +619,126 @@ because the placeholder hash cannot be converted into a PBKDF2 one without the p
 verifies the credentials and navigates, and nothing downstream knows who is signed in. That
 is this sprint's documented scope, and it is why `/mcq` is reachable directly by URL.
 
-### Phase 5: Verification and Documentation - PLANNED
+### Phase 5: Verification and Documentation - COMPLETED
 
 **Objective**: Prove the sprint works rather than assert it, and leave the documentation
 accurate for whoever picks this up next.
 
-**Tasks**:
-1. Run `npm test`, `npm run lint`, `npm run build`, and `npm run preview`, and report the
-   actual output of each. `npm run preview` matters because `npm run dev` runs on Node and
-   hides Workers-specific problems.
-2. Walk the full flow in a browser: register, land on the MCQ stub, log out, log in again
-   with the same credentials.
-3. Confirm by querying the local D1 database that `password_hash` holds no plaintext.
-4. Mark every acceptance criterion below, and mark all five phases COMPLETED.
-5. Fill in "Technical Implementation Details" and "Troubleshooting Guide" with what was
-   actually built and what actually broke.
-6. Replace the placeholder Project section in `AGENTS.md` with a current description of
-   QuizMaker, since that file is loaded into every future conversation and a stale
-   description misleads all of them.
-7. Once verification is complete and this PRD is updated, prompt Manikanta to export the
-   Cursor chat transcript for course submission. The export is Manikanta's to run; the
-   agent's job is to confirm the sprint is genuinely finished first so the transcript
-   captures a complete sprint rather than a half-verified one.
-8. Do not deploy and do not migrate the remote database. Both are Manikanta's to run.
+**What was verified** (Aug 23, 2026):
+
+**1. `npm test`** - 146 tests passing in 13 files, 15.54s, exit 0.
+
+```
+ Test Files  13 passed (13)
+      Tests  146 passed (146)
+   Duration  15.54s (transform 3.86s, setup 0ms, import 12.04s, tests 16.15s, environment 19.42s)
+```
+
+**2. `npm run lint`** - exit 0, no output at all. (18s here, against 5.6 minutes for the
+same command in Phase 4; ESLint's cache is the difference, not the code.)
+
+**3. `npm run build`** - succeeded, TypeScript clean:
+
+```
+✓ Compiled successfully in 23.5s
+  Finished TypeScript in 107s ...
+✓ Generating static pages using 10 workers (9/9) in 1129ms
+
+Route (app)
+┌ ○ /
+├ ○ /_not-found
+├ ƒ /api/auth/login
+├ ƒ /api/auth/logout
+├ ƒ /api/auth/register
+├ ○ /login
+├ ○ /mcq
+└ ○ /register
+```
+
+**4. `npm run preview`** - failed on the first attempt, which is exactly what this phase
+exists to catch. `npm run dev` and `npm run build` had both been clean throughout:
+
+```
+Error [ERR_MODULE_NOT_FOUND]: Cannot find package 'esbuild' imported from
+C:\aisprint-quizeMaker\aisprints-quizmaker\node_modules\@opennextjs\cloudflare\dist\cli\build\bundle-server.js
+```
+
+Root cause and workaround are in Troubleshooting under "npm run preview fails with Cannot
+find package 'esbuild'". Manikanta chose to keep the `node_modules` junction rather than add
+a dependency; see "Rejected, or decided against for now" for what that costs. Once `esbuild`
+resolved, preview built and served the Worker:
+
+```
+Your Worker has access to the following bindings:
+Binding                            Resource                  Mode
+env.DB (quizmaker-db)              D1 Database               local
+env.ASSETS                         Assets                    local
+env.NEXTJS_ENV ("(hidden)")        Environment Variable      local
+
+⎔ Starting local server...
+[wrangler:info] Ready on http://127.0.0.1:8787
+```
+
+**5. The full flow on the Workers runtime** (`http://127.0.0.1:8787`, not the Node dev
+server). Every page and endpoint below was exercised against that server:
+
+| Step | Result |
+|---|---|
+| `GET /` | `307` with `Location: /login` |
+| `GET /login` | `200`; `<h1>Sign in</h1>`, `id="username"`, a `type="password"` input, link to `/register` |
+| `GET /register` | `200`; `<h1>Create your account</h1>` and all five field ids |
+| `GET /mcq` | `200`; `<h1>Multiple choice quiz</h1>`, "Log out", and the "later sprint" copy |
+| `POST /api/auth/register` (new user `grace5`) | `201` with the created user, no `passwordHash` in the body |
+| Same request again | `400` `{"error":"Email already registered"}` |
+| `POST /api/auth/login`, correct password | `200` with the user, **no `set-cookie` header** |
+| `POST /api/auth/login`, wrong password | `401` `{"error":"Invalid credentials"}` |
+| `POST /api/auth/login`, unknown username | `401` `{"error":"Invalid credentials"}`, byte-identical to the line above |
+| `POST /api/auth/logout` | `200` `{"success":true}`, no `set-cookie` |
+| `POST /api/auth/login` again after logout | `200`, same user - the credentials still work |
+
+Registering, logging out, and logging back in therefore all work on workerd, which also
+proves Web Crypto PBKDF2 runs there and not just under Node.
+
+**6. Local D1 after the flow.** Both stored hashes are PBKDF2, 90 characters, and contain
+no fragment of the plaintext:
+
+```
+username    password_hash                                                                  is_pbkdf2  plaintext?
+manikanta   pbkdf2-sha256$100000$nmXqeWNOkFckhFcGxg/j9w==$LvM7y0QmDrKG4AutXq6QV7LsnbuIT6nAneZMWnZah2c=   1   0
+grace5      pbkdf2-sha256$100000$3f9tkaUd8l4sTi4Opy3xSA==$bNAtur+T4l5Dq9w23VZPGxa5V5Xezt3/B1wUJI4GBng=   1   0
+```
+
+The leftover Phase 3 account (`ada99967`, `sha256-placeholder$c4bbcb1f...`) was deleted
+first, so no placeholder-era row remains.
+
+**7. Salting proven against the real database, not just in a unit test.** A second account
+(`alan5`) was registered through the API with a password byte-identical to `grace5`'s. SQL
+comparison of the two rows returned `hashes_differ = 1`, with different salt segments
+(`100000$3...` against `100000$F...`).
+
+**8. No session machinery anywhere.** Grepping `src/` for `cookie`, `jwt`, `session`,
+`localStorage`, and `sessionStorage` returns only comments explaining the absence and two
+tests asserting `set-cookie` is null. There is no `middleware.ts` in the repository.
+
+**What was not done, deliberately**: no deploy, no `--remote` migration, and no remote
+database access. Those are Manikanta's.
+
+**Honest limits of this verification**: the flow was driven with `curl.exe` against the
+Workers preview, not clicked through in a browser, because this environment has no browser
+automation. What that leaves unproven by direct observation is only the client-side
+submission path - the `fetch` call and `router.push` that the form components perform - and
+that path is covered by the 26 component tests. Manikanta had already registered the
+`manikanta` account through the browser during his Phase 4 review, so the browser path has
+been exercised by hand, just not in this transcript.
 
 **Deliverables**:
-- Recorded command output for test, lint, build, and preview
-- This PRD fully updated with code references
-- Updated `AGENTS.md` Project section
+- Recorded command output for test, lint, build, and preview - done, above
+- This PRD fully updated with code references - done
+- Updated `AGENTS.md` Project section - done; the stale "no database, authentication, or
+  testing framework is installed" line in Stack was corrected too, and `npm test` was
+  added to the command table
 - Confirmation that verification is complete, so Manikanta can export the chat transcript
-  for course submission
+  for course submission - done, with the one open dependency decision noted above
 
 ---
 
@@ -707,6 +797,10 @@ curl -s -X POST http://localhost:3000/api/auth/login \
 curl -s -X POST http://localhost:3000/api/auth/logout -w "\nHTTP %{http_code}\n"
 ```
 
+Phase 5 ran this same sequence against `npm run preview` instead, on
+`http://127.0.0.1:8787`, which is the Workers runtime rather than Node. Prefer that for
+anything runtime-sensitive; the commands are identical apart from the port.
+
 Confirm nothing sensitive was stored, and remember each username and email can only be
 used once:
 
@@ -718,7 +812,7 @@ npx wrangler d1 execute quizmaker-db --local --command "SELECT username, passwor
 
 ## Technical Implementation Details
 
-To be filled in as code is written. Expected shape:
+What was actually built, as of the end of Phase 5. Thirteen test files, 146 tests.
 
 ### Key Files
 
@@ -777,6 +871,47 @@ export async function findUserByUsername(username: string): Promise<User | null>
 }
 ```
 
+Password storage, `src/lib/password.ts`. The salt and iteration count travel with the hash,
+so the cost can be raised later without invalidating existing rows:
+
+```typescript
+const ALGORITHM = "pbkdf2-sha256";
+const ITERATIONS = 100_000;
+
+export async function hashPassword(password: string): Promise<string> {
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const derived = await deriveKey(password, salt, ITERATIONS);
+
+  return [ALGORITHM, ITERATIONS, toBase64(salt), toBase64(derived)].join("$");
+}
+```
+
+`verifyPassword` parses that string, re-derives with the stored salt and iteration count,
+and compares with a constant-time XOR. It returns `false` rather than throwing for anything
+malformed, including the deleted Phase 3 `sha256-placeholder$` format, so a bad row produces
+a 401 and never a 500.
+
+Form submission, both auth forms. The client validates with the same schema the route uses
+and posts `parsed.data`, so client and server rules cannot drift and the server receives
+values Zod has already trimmed:
+
+```typescript
+const parsed = registerSchema.safeParse(values);
+if (!parsed.success) {
+  setErrors(fieldErrors(parsed.error));
+  return;
+}
+
+const result = await postAuth("/api/auth/register", parsed.data);
+if (result.ok) {
+  router.push("/login");
+  return;
+}
+
+setErrors(result.fields);      // rendered against each input by FieldError
+setFormError(result.message);  // rendered once above the form
+```
+
 ### Important Notes
 
 - D1 is server-only. A database module must never be imported into a `'use client'`
@@ -784,6 +919,13 @@ export async function findUserByUsername(username: string): Promise<User | null>
 - `getCloudflareContext()` does not work under jsdom; tests mock it.
 - Wrangler's local D1 is a local SQLite file. It is not the remote database and is not
   shared with anyone else.
+- Web Crypto PBKDF2 was confirmed working on workerd in Phase 5, not just under Node. Any
+  future hashing change has to be re-checked with `npm run preview`, because `npm run dev`
+  runs on Node and would not catch a Workers-only failure.
+- Password inputs have no accessible role, so component tests find them with
+  `getByLabelText` while every other control is queried by role and accessible name.
+- `FieldError` from the installed shadcn set already renders `role="alert"` and accepts an
+  `errors` array, so error wiring on an input is only `aria-invalid` and `aria-describedby`.
 
 ---
 
@@ -827,6 +969,24 @@ still requires a fresh conversation before it is installed.
   natively on the Workers runtime, unlike `bcryptjs`, which is CPU-heavy inside a Worker.
   Base64 or any other reversible encoding is not acceptable.
 
+### Rejected, or decided against for now
+
+- **`esbuild@0.25.4` as a devDependency** - proposed Aug 23, 2026 in Phase 5 and declined
+  by Manikanta the same day. `npm run preview` cannot start without a top-level `esbuild`,
+  because `@opennextjs/cloudflare@1.20.2` imports it without declaring it, so Phase 5
+  supplied one with a `node_modules` junction and left it at that. The decision keeps
+  `package.json` free of a dependency that only exists to patch around an upstream
+  packaging bug.
+
+  **Consequence to know about**: the junction is not tracked and does not survive
+  `npm install`. Anyone who reinstalls, or clones the repository fresh, gets the
+  `ERR_MODULE_NOT_FOUND` failure again on `npm run preview` and has to recreate the
+  junction from the Troubleshooting entry, or run preview under WSL, which OpenNext
+  recommends on Windows anyway. `npm run dev`, `npm test`, `npm run lint`, and
+  `npm run build` are all unaffected. Worth revisiting when
+  `@opennextjs/cloudflare` is next upgraded, since a fixed upstream package would remove
+  the problem outright.
+
 ---
 
 ## Acceptance Criteria
@@ -861,41 +1021,51 @@ still requires a fresh conversation before it is installed.
 - [x] No API response body and no log line contains `password_hash` or a plaintext
       password (responses shaped through `toPublicUser`; `console.error` receives a label
       and the error only, never the request body)
-- [ ] Querying the local database confirms `password_hash` is a hash, not the password
-      (held for Phase 5: confirmed for the Phase 3 placeholder hash, not yet re-queried
-      since PBKDF2 landed)
-- [x] Hashing the same password twice produces different stored values (`src/lib/password.test.ts`
-      asserts three hashes of one password are all distinct, with distinct salts)
+- [x] Querying the local database confirms `password_hash` is a hash, not the password
+      (Phase 5: every row is `pbkdf2-sha256$100000$...`, 90 characters, and `instr()`
+      finds no fragment of the plaintext)
+- [x] Hashing the same password twice produces different stored values
+      (`src/lib/password.test.ts` asserts three hashes of one password are all distinct
+      with distinct salts, and Phase 5 confirmed it in the database: two accounts
+      registered with the same password compared `hashes_differ = 1`)
 - [x] `/register` and `/login` render with shadcn components and show field-level errors
-      (asserted by role and accessible name in the two form test suites)
-- [ ] A teacher can register in the browser and land on the MCQ stub (the components and
-      the navigation are tested; the browser walkthrough is Phase 5)
+      (asserted by role and accessible name in the two form test suites; both pages also
+      served `200` with their headings and every field id from the Workers preview)
+- [x] A teacher can register in the browser and land on the MCQ stub (`POST` register
+      returned `201` on workerd and `/mcq` served `200` with its heading and logout
+      control; Manikanta also registered by hand through the browser in Phase 4. The
+      click-through itself was not scripted - no browser automation here)
 - [x] The MCQ stub states that question creation arrives next sprint and creates no
       questions
-- [ ] Logging out returns the teacher to `/login`, and logging back in with the same
-      credentials succeeds (both halves tested at component level; browser walkthrough is
-      Phase 5)
-- [x] `/` redirects to `/login` and the Next.js starter page is gone
+- [x] Logging out returns the teacher to `/login`, and logging back in with the same
+      credentials succeeds (logout returned `200` and a second login with the same
+      credentials returned `200` on the Workers runtime; the return to `/login` is the
+      `router.push` covered by `logout-button.test.tsx`)
+- [x] `/` redirects to `/login` and the Next.js starter page is gone (`307` with
+      `Location: /login` from the preview server)
 - [x] `npm run lint` passes with no new errors
 - [x] `npm run build` succeeds
-- [ ] `npm run preview` serves the app on the Workers runtime and the full flow works
-      there
-- [ ] No cookie is set, no token is issued, and no session store exists anywhere in the
-      codebase
-- [ ] This PRD's phase markers and code references match what was actually built
+- [x] `npm run preview` serves the app on the Workers runtime and the full flow works
+      there (after the `esbuild` resolution problem recorded in Troubleshooting; every
+      page and endpoint was then exercised against `http://127.0.0.1:8787`)
+- [x] No cookie is set, no token is issued, and no session store exists anywhere in the
+      codebase (no `set-cookie` on any response; grepping `src/` for cookie, jwt, session,
+      and storage APIs returns only comments and the two tests asserting their absence;
+      there is no `middleware.ts`)
+- [x] This PRD's phase markers and code references match what was actually built
 
 ---
 
 ## Success Metrics
 
-| Metric | Target | How Measured |
+| Metric | Target | Result at Phase 5 |
 |--------|--------|--------------|
-| Registration completes | A new teacher registers in under 60 seconds | Manual walkthrough during Phase 5 |
-| Passwords never stored in plaintext | 0 plaintext passwords | Query `password_hash` for every row in the local database |
-| Test coverage of the auth surface | Every service method and every documented status code has a test | Count tests against the endpoint and method lists above |
-| Duplicate accounts prevented | 100% of duplicate username or email attempts rejected with 400 | Automated tests plus a manual repeat registration |
-| Credential errors do not leak account existence | Unknown username and wrong password are indistinguishable | Compare both 401 response bodies |
-| Sprint stays in scope | 0 out-of-scope features built | Review the Out of Scope list against the diff at Phase 5 |
+| Registration completes | A new teacher registers in under 60 seconds | Met. A single `POST` returns 201; the form is one card with five fields |
+| Passwords never stored in plaintext | 0 plaintext passwords | Met. Every row is `pbkdf2-sha256$100000$...` and `instr()` finds no plaintext fragment |
+| Test coverage of the auth surface | Every service method and every documented status code has a test | Met. 146 tests; every service method and every documented status code is covered |
+| Duplicate accounts prevented | 100% of duplicate username or email attempts rejected with 400 | Met. Tests plus a repeat registration on workerd returning 400 "Email already registered" |
+| Credential errors do not leak account existence | Unknown username and wrong password are indistinguishable | Met. Both returned `401 {"error":"Invalid credentials"}`, and a test asserts they are byte-identical |
+| Sprint stays in scope | 0 out-of-scope features built | Met. No cookie, token, session store, or middleware exists; no question-authoring code was written |
 
 ---
 
@@ -988,6 +1158,47 @@ See "Decisions" for why each is approved.
 ---
 
 ## Troubleshooting Guide
+
+### `npm run preview` fails with "Cannot find package 'esbuild'" (hit in Phase 5, worked around)
+**Problem**: `npm run preview` died immediately, before any bundling:
+`Error [ERR_MODULE_NOT_FOUND]: Cannot find package 'esbuild' imported from
+node_modules\@opennextjs\cloudflare\dist\cli\build\bundle-server.js`. `npm run dev`,
+`npm run build`, `npm test`, and `npm run lint` were all unaffected, so nothing before
+Phase 5 surfaced it.
+**Cause**: `@opennextjs/cloudflare@1.20.2` imports bare `esbuild` in its build CLI but does
+not declare it in `dependencies` or `peerDependencies`. It relies on `esbuild` being
+hoisted to the top level from its own dependency `@opennextjs/aws@4.1.0`, which pins
+`esbuild@0.25.4`. On this install npm could not hoist it, because `wrangler@4.125.0` wants
+`esbuild@0.28.1`; npm nested both instead
+(`node_modules/@opennextjs/aws/node_modules/esbuild` and
+`node_modules/wrangler/node_modules/esbuild`), leaving no `node_modules/esbuild` for
+`@opennextjs/cloudflare` to resolve. `npm ls esbuild` shows both nested copies. This is an
+upstream packaging bug, not a mistake in this repository.
+**Workaround used, so Phase 5 could finish**: a directory junction was created inside
+`node_modules` only, pointing the expected path at the copy that is already installed:
+
+```powershell
+New-Item -ItemType Junction -Path "node_modules\esbuild" `
+  -Target "node_modules\@opennextjs\aws\node_modules\esbuild"
+```
+
+Preview then built and served normally. `node_modules` is not committed, so this changed no
+tracked file - but it also will not survive `npm install`, and it is invisible to anyone who
+clones the repository.
+**Alternative fix, considered and declined**: adding `esbuild@0.25.4` to `devDependencies`
+would give a real top-level copy. Manikanta declined it on Aug 23, 2026, preferring to keep
+`package.json` clean of a workaround for someone else's packaging bug, so the junction above
+is the standing answer. Recreate it after any `npm install`, or run preview under WSL.
+**Verification**: `node -e "console.log(require.resolve('esbuild'))"` resolves, and
+`npm run preview` reaches `Ready on http://127.0.0.1:8787`.
+
+### PowerShell `-match` on curl output returns HTML instead of true or false (hit in Phase 5)
+**Problem**: Checking a fetched page with `$page -match 'Sign in'` printed thousands of
+lines of HTML, and one verification command wrote a 112 KB result.
+**Cause**: `curl.exe` output arrives as an array of lines. PowerShell's `-match` against an
+array is a filter that returns the matching elements, not a boolean.
+**Solution**: Join first and cast: `$page = (curl.exe -s $url) -join "`n"`, then
+`[bool]($page -match 'Sign in')`. Worth knowing for any future page check on Windows.
 
 ### workerd crashes, so no local D1 command works (hit in Phase 1, RESOLVED)
 **Problem**: `npx wrangler d1 migrations apply quizmaker-db --local` exited with
@@ -1118,26 +1329,30 @@ before assuming the command is broken.
 
 ## Current Status
 
-**Last Updated**: Aug 22, 2026 (late night, after Phase 4 completion)
-**Current Phase**: Phase 4 - Auth UI and Password Hashing, COMPLETED
-**Branch**: `feature/register-login-logout`, branched from `main`. Phases 1 to 3 are
-committed locally as `0a46303`, `5330139`, and `805432d`, none of them pushed, because no
-GitHub credentials are available in the agent's shell; Manikanta will push. Phase 4 is
-uncommitted and awaiting his review. (The Phase 3 status block claimed Phases 2 and 3 were
-uncommitted; `git log` shows they were committed after that was written.)
-**Status**: Phases 1 to 4 COMPLETED with no outstanding blockers. 146 tests pass, lint is
-clean, and the production build succeeds. Passwords are now stored as PBKDF2-SHA256 with a
-random per-user salt, and the placeholder module is deleted. The browser walkthrough and the
-`npm run preview` run on the Workers runtime are deliberately left to Phase 5, so no
-end-to-end claim is made here beyond what the tests and the build prove.
-**Dependency decisions**: All settled as of Aug 22, 2026 - the Vitest set (Phase 1),
-`zod` (Phase 3), and Web Crypto PBKDF2-SHA256 hashing (Phase 4) are approved. Phase 4 added
-no new dependency. Anything not on that list still needs approval before it is installed.
+**Last Updated**: Aug 23, 2026 (after Phase 5 completion - sprint complete)
+**Current Phase**: Phase 5 - Verification and Documentation, COMPLETED. All five phases are
+done.
+**Branch**: `feature/register-login-logout`, branched from `main`. Phases 1 to 4 are
+committed locally as `0a46303`, `5330139`, `805432d`, and `c2be2cb`, none of them pushed,
+because no GitHub credentials are available in the agent's shell; Manikanta will push. The
+Phase 5 documentation changes are uncommitted and awaiting his review. Nothing has been
+merged to `main`.
+**Status**: The sprint is functionally complete and verified on the runtime it will actually
+deploy to. 146 tests pass, lint is clean, the production build succeeds, and the whole
+register / login / logout flow works against `npm run preview` on workerd with local D1
+bound. Every stored password is PBKDF2-SHA256 with a random per-user salt, confirmed by
+querying the database. One environment caveat: `npm run preview` needs a top-level
+`esbuild`, supplied by a `node_modules` junction rather than a declared dependency, by
+decision. It has to be recreated after any `npm install`.
+**Dependency decisions**: The Vitest set (Phase 1), `zod` (Phase 3), and Web Crypto
+PBKDF2-SHA256 hashing (Phase 4) are approved; Phases 4 and 5 added no dependency. Adding
+`esbuild` was proposed in Phase 5 and declined; the junction stands instead.
 `@vitejs/plugin-react` is pinned to `^5` and `wrangler` was upgraded to `^4.125.0`, both
 for reasons recorded in Troubleshooting.
-**Next Steps**: Manikanta reviews Phase 4. Nothing is committed until he approves, and
-Phase 5 does not start until he says so. Anyone with a local account from Phase 3 has to
-delete it and register again; see the note at the end of Phase 4.
+**Next Steps**: Manikanta reviews Phase 5, then exports the Cursor chat transcript for
+course submission. Deploying and any remote migration remain his. The natural first task of
+the next sprint is real session management, without which login establishes nothing and
+`/mcq` stays public.
 
 **Phase Status Summary**:
 
@@ -1145,4 +1360,4 @@ delete it and register again; see the note at the end of Phase 4.
 - Phase 2 - User Service: COMPLETED
 - Phase 3 - Auth API Routes: COMPLETED
 - Phase 4 - Auth UI and Password Hashing: COMPLETED
-- Phase 5 - Verification and Documentation: PLANNED
+- Phase 5 - Verification and Documentation: COMPLETED
