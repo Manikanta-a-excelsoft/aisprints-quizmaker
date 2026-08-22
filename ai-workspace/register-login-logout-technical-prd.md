@@ -1,6 +1,6 @@
 Date created: Aug 22, 2026
-Date last modified: Aug 22, 2026 (night - Phase 2 COMPLETED; user service and its mocked-D1
-tests in place, 62 tests passing)
+Date last modified: Aug 22, 2026 (night - Phase 3 COMPLETED; three auth endpoints built,
+verified by 90 tests, a clean build, and manual curl against local D1)
 
 # Register, Login, Logout - Technical PRD
 
@@ -185,7 +185,8 @@ response body.
 ```
 
 **Response:**
-- Success (201): `{ "user": { "id", "firstName", "lastName", "username", "email", "createdAt" } }`
+- Success (201): `{ "user": { "id", "firstName", "lastName", "username", "email", "createdAt", "updatedAt" } }`
+  — the shape `toPublicUser()` produces, which also carries `updatedAt`
 - Error (400): `{ "error": "Validation failed", "fields": { "email": "Must be a valid email address" } }`
 - Error (400): `{ "error": "Username already taken" }` or `{ "error": "Email already registered" }`
 - Error (500): `{ "error": "Could not create account" }`
@@ -206,7 +207,8 @@ problem.
 ```
 
 **Response:**
-- Success (200): `{ "user": { "id", "firstName", "lastName", "username", "email" } }`
+- Success (200): `{ "user": { ... } }` — the same `toPublicUser()` shape register returns,
+  including `createdAt` and `updatedAt`
 - Error (400): `{ "error": "Validation failed", "fields": { ... } }`
 - Error (401): `{ "error": "Invalid credentials" }`
 - Error (500): `{ "error": "Could not sign in" }`
@@ -418,35 +420,90 @@ handler or component ever touches `env.DB` directly.
 **Note**: Password hashing is *not* part of this phase. The service accepts an
 already-hashed `passwordHash` and stores it verbatim. Hashing arrives in Phase 4.
 
-### Phase 3: Auth API Routes - PLANNED
+### Phase 3: Auth API Routes - COMPLETED
 
 **Objective**: The three HTTP endpoints work and return the exact status codes specified
 above, verified by tests and by hand with curl.
 
-**Tasks**:
-1. Install the approved `zod` runtime dependency (see "Decisions").
-2. **Red**: write route handler tests for register (201, 400 validation, 400 duplicate,
-   500), login (200, 401 unknown user, 401 wrong password, 400), and logout (200), with
-   the user service mocked at the module boundary.
-3. **Green**: implement `src/app/api/auth/register/route.ts`,
-   `src/app/api/auth/login/route.ts`, and `src/app/api/auth/logout/route.ts`, each
-   parsing its body through a Zod schema before use, per `nextjs.mdc`, and calling only
-   the user service. Zod's field-level issues map onto the `fields` object in the 400
-   response documented above.
-4. Confirm no response body contains `password_hash`.
-5. Run `npm test` and `npm run build`.
-6. Provide curl commands for manual verification, noting that `npm run dev` may bind
-   `3001` if `3000` is taken.
+**What was built** (Aug 22, 2026):
+
+1. `zod` was already installed at `^4.4.3`, so nothing new was added. Zod 4 exposes
+   `z.email()` as a top-level validator, which is what the schemas use rather than the
+   deprecated `z.string().email()`.
+2. **Red**: wrote the three route test files first, 28 tests. Confirmed all three suites
+   failed with `Cannot find module '/src/app/api/auth/<route>/route'` while the 62 earlier
+   tests kept passing.
+3. **Green**: implemented the three route handlers plus two supporting modules. All 90
+   tests pass.
+
+**Files**:
+
+- `src/app/api/auth/register/route.ts` - 201 on success, 400 on validation or duplicate,
+  500 otherwise
+- `src/app/api/auth/login/route.ts` - 200 on success, 401 on any credential failure, 400 on
+  malformed input, 500 otherwise
+- `src/app/api/auth/logout/route.ts` - 200 with `{ "success": true }`, no side effects
+- `src/lib/validation/auth.ts` - `registerSchema`, `loginSchema`, and `fieldErrors()`
+- `src/lib/password-placeholder.ts` - temporary hashing, replaced in Phase 4
+- Colocated tests: `route.test.ts` beside each route
+
+**Design decisions worth recording**:
+
+- Schemas live in `src/lib/validation/auth.ts` rather than inside each route so the Phase 4
+  forms can mirror exactly the rules the server enforces instead of restating them.
+- `loginSchema` only requires both fields to be non-empty. Applying the registration
+  password rules at login would advertise the password policy and would lock out existing
+  accounts if the rules later change.
+- `fieldErrors()` keeps the first Zod issue per field, producing the flat
+  `{ "email": "Must be a valid email address" }` shape the API contract documents.
+- Both credential failures return one shared `INVALID_CREDENTIALS` constant, so an unknown
+  username and a wrong password are indistinguishable. A test asserts the two responses are
+  byte-identical.
+- 500 responses return a fixed message and never the underlying error. The real error goes
+  to `console.error` with a short label and no request body, so no password reaches the
+  logs.
+- Routes call only the user service and shape every success body through `toPublicUser()`,
+  so `passwordHash` cannot reach a client by omission.
+- Handlers return the standard Web `Response.json` rather than `NextResponse`, which keeps
+  the tests free of a `next/server` import and works identically on the Workers runtime.
+
+**Testing notes**:
+
+- The user service is mocked with `importOriginal`, so `DuplicateUserError` and
+  `toPublicUser` are the real implementations while `createUser` and `findUserByUsername`
+  are stubs. Response shaping is therefore genuinely exercised rather than mocked.
+- `@opennextjs/cloudflare` is mocked to throw if called, so a route test that accidentally
+  reached a Cloudflare binding would fail loudly instead of silently hitting a database.
+- The login fixture computes its stored hash with the real placeholder, so the 200 path
+  proves verification works rather than asserting against a hand-written constant.
+
+**Verified**:
+- `npm test` - 90 tests passing in 6 files (28 new, 62 from Phases 1 and 2)
+- `npm run build` - succeeded; all three routes listed as dynamic (`ƒ`) functions
+- `npm run lint` - clean, exit 0
+- Manual curl against `npm run dev` on the real local D1: register returned 201 with a
+  generated id and timestamps, a repeat registration returned 400
+  `{"error":"Email already registered"}`, login with the correct password returned 200 with
+  the same user, a wrong password and an unknown username both returned 401
+  `{"error":"Invalid credentials"}`, an all-invalid body returned 400 with four named
+  fields, and logout returned 200 `{"success":true}`
+- Queried the local database afterwards: the stored value is
+  `sha256-placeholder$c4bbcb1f...`, confirming no plaintext password was written
 
 **Deliverables**:
-- `zod` added to `package.json` dependencies
-- Zod schemas for the register and login request bodies
-- The three route handlers and their colocated tests, passing
-- Working curl commands recorded in this PRD
-- Phase 3 marker updated
+- `zod` in `package.json` dependencies - already present, `^4.4.3`
+- Zod schemas for the register and login request bodies - done
+- The three route handlers and their colocated tests, passing - done
+- Working curl commands recorded in this PRD - done, see "Manual API Verification"
+- Phase 3 marker updated - done
 
-**Note**: Until Phase 4 lands, register writes whatever the hashing placeholder produces.
-No user created before Phase 4 should be treated as having a valid password.
+**Note on the hashing placeholder**: `src/lib/password-placeholder.ts` is an unsalted
+single-round SHA-256. It is one-way, so no plaintext password is stored, but it is not
+acceptable password storage: equal passwords produce equal hashes and it is cheap to attack
+with a rainbow table. Phase 4 replaces it with `src/lib/password.ts` using Web Crypto
+PBKDF2-SHA256 and a random per-user salt, deletes this file, and updates both routes. Any
+account registered before that point has a `sha256-placeholder$` hash and must be
+recreated; the prefix makes those rows easy to find.
 
 ### Phase 4: Auth UI and Password Hashing - PLANNED
 
@@ -508,6 +565,70 @@ accurate for whoever picks this up next.
 
 ---
 
+## Manual API Verification
+
+Start the dev server with `npm run dev`. It binds `3000` when free and falls back to `3001`
+or higher, so read the port from its output and substitute it below. Bindings work in dev
+because `next.config.ts` calls `initOpenNextCloudflareForDev()`, so these requests hit the
+real local D1.
+
+**Windows PowerShell.** `curl` is an alias for `Invoke-WebRequest`, so call `curl.exe`
+explicitly. PowerShell also splits an inline JSON body on the spaces inside a password, so
+write the body to a file and send it with `--data-binary "@file"`. Inline `-d` with a
+space-containing password silently sends a broken body and returns 400.
+
+```powershell
+$body = "$env:TEMP\reg.json"
+Set-Content -Path $body -NoNewline -Value '{"firstName":"Ada","lastName":"Lovelace","username":"ada","email":"ada@example.com","password":"correct horse battery staple"}'
+
+# Register: expect 201
+curl.exe -s -X POST http://localhost:3000/api/auth/register -H "Content-Type: application/json" --data-binary "@$body" -w "`nHTTP %{http_code}`n"
+
+# Same request again: expect 400, "Username already taken" or "Email already registered"
+curl.exe -s -X POST http://localhost:3000/api/auth/register -H "Content-Type: application/json" --data-binary "@$body" -w "`nHTTP %{http_code}`n"
+
+$login = "$env:TEMP\login.json"
+Set-Content -Path $login -NoNewline -Value '{"username":"ada","password":"correct horse battery staple"}'
+
+# Login: expect 200 with the user object
+curl.exe -s -X POST http://localhost:3000/api/auth/login -H "Content-Type: application/json" --data-binary "@$login" -w "`nHTTP %{http_code}`n"
+
+# Wrong password and unknown username: both expect 401 "Invalid credentials"
+curl.exe -s -X POST http://localhost:3000/api/auth/login -H "Content-Type: application/json" -d "{\"username\":\"ada\",\"password\":\"wrong\"}" -w "`nHTTP %{http_code}`n"
+curl.exe -s -X POST http://localhost:3000/api/auth/login -H "Content-Type: application/json" -d "{\"username\":\"nobody\",\"password\":\"whatever\"}" -w "`nHTTP %{http_code}`n"
+
+# Validation failure: expect 400 with a message per invalid field
+curl.exe -s -X POST http://localhost:3000/api/auth/register -H "Content-Type: application/json" -d "{\"firstName\":\"\",\"lastName\":\"L\",\"username\":\"ab\",\"email\":\"nope\",\"password\":\"short\"}" -w "`nHTTP %{http_code}`n"
+
+# Logout: expect 200 {"success":true}
+curl.exe -s -X POST http://localhost:3000/api/auth/logout -w "`nHTTP %{http_code}`n"
+```
+
+**bash or zsh**, where single quotes keep the body intact:
+
+```bash
+curl -s -X POST http://localhost:3000/api/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{"firstName":"Ada","lastName":"Lovelace","username":"ada","email":"ada@example.com","password":"correct horse battery staple"}' \
+  -w "\nHTTP %{http_code}\n"
+
+curl -s -X POST http://localhost:3000/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"username":"ada","password":"correct horse battery staple"}' \
+  -w "\nHTTP %{http_code}\n"
+
+curl -s -X POST http://localhost:3000/api/auth/logout -w "\nHTTP %{http_code}\n"
+```
+
+Confirm nothing sensitive was stored, and remember each username and email can only be
+used once:
+
+```powershell
+npx wrangler d1 execute quizmaker-db --local --command "SELECT username, password_hash FROM users ORDER BY created_at DESC LIMIT 5"
+```
+
+---
+
 ## Technical Implementation Details
 
 To be filled in as code is written. Expected shape:
@@ -529,6 +650,15 @@ Built in Phase 2:
   six functions plus `toPublicUser` and `DuplicateUserError`
 - `src/lib/services/user-service.test.ts` - 29 tests against a fake D1 that records every
   statement and rejects `first()`
+
+Built in Phase 3:
+
+- `src/app/api/auth/register/route.ts` - account creation endpoint
+- `src/app/api/auth/login/route.ts` - credential check endpoint
+- `src/app/api/auth/logout/route.ts` - logout acknowledgement
+- `src/lib/validation/auth.ts` - Zod schemas shared with the Phase 4 forms
+- `src/lib/password-placeholder.ts` - temporary SHA-256 hashing, deleted in Phase 4
+- `route.test.ts` beside each route - 28 tests with the user service mocked
 
 Planned for later phases:
 - `src/lib/password.ts` - hashing and verification
@@ -631,17 +761,23 @@ still requires a fresh conversation before it is installed.
 - [x] Every user query uses a prepared statement with numbered placeholders and no
       concatenated user input (asserted across every recorded statement by a convention
       test in `src/lib/services/user-service.test.ts`)
-- [ ] `POST /api/auth/register` returns 201 with the created user on success
-- [ ] `POST /api/auth/register` returns 400 for invalid input and for a duplicate username
+- [x] `POST /api/auth/register` returns 201 with the created user on success (tests plus
+      manual curl)
+- [x] `POST /api/auth/register` returns 400 for invalid input and for a duplicate username
       or email
-- [ ] `POST /api/auth/login` returns 200 with the user for correct credentials
-- [ ] `POST /api/auth/login` returns 401 for both an unknown username and a wrong
-      password, with an identical message
-- [ ] `POST /api/auth/logout` returns a success response
-- [ ] No API response body and no log line contains `password_hash` or a plaintext
-      password
-- [ ] Querying the local database confirms `password_hash` is a hash, not the password
-- [ ] Hashing the same password twice produces different stored values
+- [x] `POST /api/auth/login` returns 200 with the user for correct credentials
+- [x] `POST /api/auth/login` returns 401 for both an unknown username and a wrong
+      password, with an identical message (asserted byte-identical in
+      `src/app/api/auth/login/route.test.ts`)
+- [x] `POST /api/auth/logout` returns a success response
+- [x] No API response body and no log line contains `password_hash` or a plaintext
+      password (responses shaped through `toPublicUser`; `console.error` receives a label
+      and the error only, never the request body)
+- [x] Querying the local database confirms `password_hash` is a hash, not the password
+      (currently the Phase 3 placeholder hash; to be re-confirmed after Phase 4 swaps in
+      PBKDF2)
+- [ ] Hashing the same password twice produces different stored values (Phase 4; the
+      current placeholder is unsalted and deliberately does not satisfy this)
 - [ ] `/register` and `/login` render with shadcn components and show field-level errors
 - [ ] A teacher can register in the browser and land on the MCQ stub
 - [ ] The MCQ stub states that question creation arrives next sprint and creates no
@@ -888,28 +1024,29 @@ before assuming the command is broken.
 
 ## Current Status
 
-**Last Updated**: Aug 22, 2026 (night, after Phase 2 completion)
-**Current Phase**: Phase 2 - User Service, COMPLETED
+**Last Updated**: Aug 22, 2026 (night, after Phase 3 completion)
+**Current Phase**: Phase 3 - Auth API Routes, COMPLETED
 **Branch**: `feature/register-login-logout`, branched from `main`. Phase 1 is committed
 locally as `0a46303` but not yet pushed, because no GitHub credentials are available in the
-agent's shell; Manikanta will push. Phase 2 is uncommitted and awaiting his review.
-**Status**: Phases 1 and 2 COMPLETED with no outstanding blockers. 62 tests pass, lint is
-clean, and the typecheck is clean. The `users` table is applied to local D1 with `--local`
-only, `env.DB` is typed, and all user database access now sits behind
-`src/lib/services/user-service.ts`.
+agent's shell; Manikanta will push. Phases 2 and 3 are uncommitted and awaiting his review.
+**Status**: Phases 1, 2, and 3 COMPLETED with no outstanding blockers. 90 tests pass, the
+production build succeeds, and lint is clean. Register, login, and logout all work against
+the real local D1, confirmed by curl. The one deliberate gap is password hashing: register
+currently uses an unsalted SHA-256 placeholder, which Phase 4 replaces with PBKDF2.
 **Dependency decisions**: All settled as of Aug 22, 2026 - the Vitest set (Phase 1),
 `zod` (Phase 3), and Web Crypto PBKDF2-SHA256 hashing (Phase 4) are approved. No open
 decisions remain; anything not on that list still needs approval before it is installed.
 `@vitejs/plugin-react` is pinned to `^5` and `wrangler` was upgraded to `^4.125.0`, both
 for reasons recorded in Troubleshooting.
-**Next Steps**: Manikanta reviews Phase 2. Nothing is committed for it until he approves.
-Phase 3, the auth API routes, does not start until he says "go Phase 3". Phase 3 will
-install `zod` and consume `toPublicUser` and `DuplicateUserError` from the user service.
+**Next Steps**: Manikanta reviews Phase 3. Nothing is committed for it until he approves.
+Phase 4 does not start until he says "go Phase 4", and it needs the shadcn sign-up and login
+block code from him. Phase 4 must also delete `src/lib/password-placeholder.ts` and rewire
+both routes to the real PBKDF2 implementation.
 
 **Phase Status Summary**:
 
 - Phase 1 - Database and Test Setup: COMPLETED
 - Phase 2 - User Service: COMPLETED
-- Phase 3 - Auth API Routes: PLANNED
+- Phase 3 - Auth API Routes: COMPLETED
 - Phase 4 - Auth UI and Password Hashing: PLANNED
 - Phase 5 - Verification and Documentation: PLANNED
