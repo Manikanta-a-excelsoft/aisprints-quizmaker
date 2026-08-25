@@ -22,7 +22,7 @@ import {
 } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { postAuth } from "@/lib/auth-client";
-import { fieldErrors, registerSchema } from "@/lib/validation/auth";
+import { fieldErrors, registerFormSchema } from "@/lib/validation/auth";
 
 const EMPTY = {
 	firstName: "",
@@ -30,6 +30,7 @@ const EMPTY = {
 	username: "",
 	email: "",
 	password: "",
+	confirmPassword: "",
 };
 
 export function RegisterForm() {
@@ -47,8 +48,9 @@ export function RegisterForm() {
 		event.preventDefault();
 		setFormError(null);
 
-		// The same schema the route uses, so the two can never disagree.
-		const parsed = registerSchema.safeParse(values);
+		// The route's own schema plus the confirmation check, so the two cannot disagree
+		// about the fields they share.
+		const parsed = registerFormSchema.safeParse(values);
 		if (!parsed.success) {
 			setErrors(fieldErrors(parsed.error));
 			return;
@@ -57,7 +59,15 @@ export function RegisterForm() {
 		setErrors({});
 		setPending(true);
 
-		const result = await postAuth("/api/auth/register", parsed.data);
+		// confirmPassword is left behind deliberately: the API has no such field.
+		const { firstName, lastName, username, email, password } = parsed.data;
+		const result = await postAuth("/api/auth/register", {
+			firstName,
+			lastName,
+			username,
+			email,
+			password,
+		});
 		if (result.ok) {
 			router.push("/mcq");
 			return;
@@ -177,6 +187,30 @@ export function RegisterForm() {
 							<FieldError
 								id="password-error"
 								errors={errors.password ? [{ message: errors.password }] : undefined}
+							/>
+						</Field>
+
+						<Field data-invalid={Boolean(errors.confirmPassword)}>
+							<FieldLabel htmlFor="confirmPassword">Confirm password</FieldLabel>
+							<Input
+								id="confirmPassword"
+								name="confirmPassword"
+								type="password"
+								autoComplete="new-password"
+								value={values.confirmPassword}
+								onChange={(event) => update("confirmPassword", event.target.value)}
+								aria-invalid={Boolean(errors.confirmPassword)}
+								aria-describedby={
+									errors.confirmPassword ? "confirmPassword-error" : undefined
+								}
+							/>
+							<FieldError
+								id="confirmPassword-error"
+								errors={
+									errors.confirmPassword
+										? [{ message: errors.confirmPassword }]
+										: undefined
+								}
 							/>
 						</Field>
 

@@ -891,18 +891,28 @@ and compares with a constant-time XOR. It returns `false` rather than throwing f
 malformed, including the deleted Phase 3 `sha256-placeholder$` format, so a bad row produces
 a 401 and never a 500.
 
-Form submission, both auth forms. The client validates with the same schema the route uses
-and posts `parsed.data`, so client and server rules cannot drift and the server receives
-values Zod has already trimmed:
+Form submission, both auth forms. The client validates with the route's own schema, so
+client and server rules cannot drift and the server receives values Zod has already
+trimmed. The register form validates against `registerFormSchema`, which is
+`registerSchema` plus the browser-only `confirmPassword` check, and then posts only the
+fields the route's schema knows about:
 
 ```typescript
-const parsed = registerSchema.safeParse(values);
+const parsed = registerFormSchema.safeParse(values);
 if (!parsed.success) {
   setErrors(fieldErrors(parsed.error));
   return;
 }
 
-const result = await postAuth("/api/auth/register", parsed.data);
+// confirmPassword is left behind deliberately: the API has no such field.
+const { firstName, lastName, username, email, password } = parsed.data;
+const result = await postAuth("/api/auth/register", {
+  firstName,
+  lastName,
+  username,
+  email,
+  password,
+});
 if (result.ok) {
   router.push("/mcq");
   return;
@@ -1353,6 +1363,25 @@ for reasons recorded in Troubleshooting.
 course submission. Deploying and any remote migration remain his. The natural first task of
 the next sprint is real session management, without which login establishes nothing and
 `/mcq` stays public.
+
+**Changes made after Phase 5 closed** (Aug 25, 2026), both driven by the instructor's
+requirement and both test-first:
+
+1. **Registration now lands on `/mcq`** instead of `/login`. The `/login` redirect was an
+   implementation choice in Phase 4 that contradicted this PRD's own acceptance criterion
+   ("A teacher can register in the browser and land on the MCQ stub"), so the code was
+   wrong and the criterion was right. One line in `register-form.tsx`, plus its test.
+2. **A "Confirm password" field was added to the register form.** It is validated in the
+   browser only: `registerFormSchema` in `src/lib/validation/auth.ts` extends
+   `registerSchema` with `confirmPassword` and a `.refine()` that reports "Passwords do not
+   match" against the confirmation field. The form posts only the five fields
+   `registerSchema` defines, so the API contract, the route, the route tests, and the curl
+   commands in this document are all unchanged, and the confirmation value never leaves the
+   browser or reaches the database. Nothing about hashing changed: one password is hashed,
+   once, exactly as before.
+
+   Verified: 156 tests passing in 14 files (10 new - 7 for the schema in the new
+   `src/lib/validation/auth.test.ts`, 3 for the form), lint clean, build clean.
 
 **Phase Status Summary**:
 
