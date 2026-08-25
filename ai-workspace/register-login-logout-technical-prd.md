@@ -904,7 +904,7 @@ if (!parsed.success) {
 
 const result = await postAuth("/api/auth/register", parsed.data);
 if (result.ok) {
-  router.push("/login");
+  router.push("/mcq");
   return;
 }
 

@@ -126,7 +126,7 @@ describe("RegisterForm", () => {
 		});
 	});
 
-	it("sends the user to sign in after a successful registration", async () => {
+	it("sends the user to the quiz page after a successful registration", async () => {
 		const user = userEvent.setup();
 		stubFetch(201, { user: { username: "ada" } });
 		render(<RegisterForm />);
@@ -134,7 +134,7 @@ describe("RegisterForm", () => {
 		await fillValidForm(user);
 		await user.click(screen.getByRole("button", { name: "Create account" }));
 
-		await waitFor(() => expect(push).toHaveBeenCalledWith("/login"));
+		await waitFor(() => expect(push).toHaveBeenCalledWith("/mcq"));
 	});
 
 	it("shows the duplicate username message from the server", async () => {
