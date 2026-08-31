@@ -612,7 +612,8 @@ Replaces the Sprint 1 stub at `src/app/mcq/page.tsx`.
   question text, case-insensitively. No refetch, no query parameter.
 - `Table` with columns: Name, Question (truncated with `line-clamp` and a `title`
   attribute), Choices (a `Badge` with the count), and Actions.
-- Actions in a `DropdownMenu` per row: Attempt, Edit, Delete.
+- Actions in a `DropdownMenu` per row: Preview, Edit, Delete. "Preview" opens the attempt
+  page — same destination the plan called "Attempt", relabelled at Manikanta's request.
 - Delete opens an `AlertDialog` naming the question and warning that the action cannot be
   undone. Confirming calls `DELETE`, removes the row, and raises a success toast.
 - While loading, six `Skeleton` rows inside the table body.
@@ -648,7 +649,8 @@ the choice is visible rather than implied.
 
 - The same `<QuestionForm />`, in edit mode, seeded from
   `GET /api/mcq/[id]?include=answers` — the one caller that needs the correct flags.
-- Existing choices keep their `id` so `PUT` can update them in place.
+- Choices are sent without ids. Decision 3 settled on replace-all, so `PUT` deletes the old
+  choice rows and inserts the new set; an id on the way in would carry no meaning.
 - Submit sends `PUT /api/mcq/[id]`. On `200`, toast and navigate to `/mcq`.
 - A missing id renders a "question not found" state with a link back to `/mcq`, not a crash.
 
@@ -1034,40 +1036,163 @@ attempts recorded during the run went with their question.
 
 **Not in this phase**: no UI, no shadcn installs.
 
-### Phase 4: UI and Polish - PLANNED
+### Phase 4: UI and Polish - COMPLETED
 
 **Objective**: A teacher can create, find, edit, delete, and attempt a question in the
 browser, with the polish declared In Scope working — search, empty state, dropdown actions,
 toasts, and skeletons.
 
-**Tasks**:
-1. Install the missing shadcn components, one at a time, verifying each produced files:
-   `npx shadcn@latest add @shadcn/dropdown-menu @shadcn/alert-dialog @shadcn/radio-group @shadcn/textarea @shadcn/sonner @shadcn/skeleton`.
-   `sonner` adds an npm dependency, so it waits on open decision 6. Commit the
-   `package-lock.json` change with the phase.
-2. **Red**: write the component and page tests first — `mcq-client.test.ts`,
-   `question-list.test.tsx`, `question-form.test.tsx`, `attempt-form.test.tsx`, and a test
-   that `/mcq` no longer renders the Sprint 1 stub copy. jsdom is opted into per file with
-   `// @vitest-environment jsdom`, per `vitest.config.ts`. Paste the failing run.
-3. **Green**: build `src/lib/mcq-client.ts`, the components under
-   `src/components/mcq/`, the four pages, and mount `<Toaster />` in `src/app/layout.tsx`.
-4. Confirm the polish is genuinely covered: a search test that filters without a second
-   fetch, an empty-state test, a delete test that requires the dialog to be confirmed, a
-   toast assertion, and a skeleton-visible-then-gone test.
-5. Run `npm run lint` and `npm run build` and report the real output.
-6. Update this PRD, then propose the commit and wait for approval.
+**What was built** (Aug 31, 2026):
 
-**Deliverables**:
+1. **shadcn components, through the CLI.** One pass installed all six:
+   `npx shadcn@latest add @shadcn/dropdown-menu @shadcn/alert-dialog @shadcn/radio-group @shadcn/textarea @shadcn/sonner @shadcn/skeleton`.
+   It reported "Created 6 files" and skipped `button.tsx` as identical, which was left
+   alone rather than forced with `--overwrite`. Every file was checked to exist before
+   anything imported it, per the `shadcn.mdc` warning that a component with no Base UI
+   equivalent silently produces nothing. Nothing in `src/components/ui/` was hand-edited.
+2. **Red first.** Six test files were written before any component existed and run:
+   `npx vitest run src/lib/mcq-client.test.ts src/components/mcq` reported
+   **6 failed (6), no tests**, every one of them `Failed to resolve import` for the module
+   about to be written. The failing run is in the chat transcript.
+3. **Green.** Built `src/lib/mcq-client.ts`, five components under `src/components/mcq/`,
+   the three new pages, rewrote `/mcq`, and mounted `<Toaster />` in `layout.tsx`. The
+   suite then reported **459 passed (459)** across 27 files.
+4. `npm run lint` is clean. `npm run build` compiles and lists all four MCQ routes —
+   `/mcq` static, `/mcq/new` static, `/mcq/[id]/edit` and `/mcq/[id]/attempt` dynamic.
+5. **Browser walkthrough.** Driven with real headless Chromium and captured as 22
+   screenshots plus a transcript in `ai-workspace/phase4-walkthrough/`. See the
+   walkthrough subsection below.
+
+**Deliverables, as built**:
 - `src/lib/mcq-client.ts` — the one way the MCQ UI talks to the API, mirroring
   `auth-client.ts`
-- `src/components/mcq/question-list.tsx`, `question-form.tsx`, `attempt-form.tsx`, and the
-  small pieces they need (`delete-question-dialog.tsx`, `question-row-actions.tsx`)
+- `src/components/mcq/question-list.tsx`, `question-form.tsx`, `attempt-form.tsx`,
+  `question-row-actions.tsx`, `question-loader.tsx`
 - `src/app/mcq/page.tsx` rewritten, `src/app/mcq/new/page.tsx`,
   `src/app/mcq/[id]/edit/page.tsx`, `src/app/mcq/[id]/attempt/page.tsx`
 - `<Toaster />` in `src/app/layout.tsx`
-- New shadcn components in `src/components/ui/`, unedited
-- Colocated tests for everything above, passing
+- Six new shadcn components in `src/components/ui/`, unedited
+- Colocated tests for everything above, plus a rewritten `src/app/mcq/page.test.tsx`
 - Clean `npm run lint` and `npm run build`
+
+#### How the UI differs from the plan above
+
+Five differences, recorded so the doc and the code agree:
+
+1. **The row action is labelled "Preview", not "Attempt".** Manikanta asked for
+   "Preview, Edit and Delete" when starting the phase. The destination is unchanged —
+   `/mcq/[id]/attempt` — only the label differs, and it reads better from an author's list.
+2. **There is no `delete-question-dialog.tsx`.** The `AlertDialog` lives inside
+   `question-row-actions.tsx` alongside the menu that opens it. Splitting them would have
+   meant lifting per-row dialog state into the list for a component used in exactly one
+   place. Each row owns its own confirmation.
+3. **`question-loader.tsx` was added, and was not in the plan.** The edit and attempt pages
+   both need one question by id before they can render, and both need the same loading,
+   not-found and load-failed states. The only difference is whether `?include=answers` is
+   asked for, which the `mode` prop decides. Duplicating that in two pages would have been
+   worse.
+4. **The plan's line about edit-mode choices keeping their `id` is wrong** and has been
+   corrected in the UI section. Decision 3 settled on replace-all, so `PUT` takes choices
+   with no ids and the form sends none.
+5. **`QuestionRowActions` takes a `defaultMenuOpen` prop.** It forwards straight to the
+   menu primitive's own `defaultOpen`. It exists because Base UI's trigger cannot be opened
+   under jsdom — see troubleshooting below — so the component tests start the menu open to
+   reach its contents. Production code never passes it.
+
+#### Technical implementation details
+
+**`src/lib/mcq-client.ts`** follows `auth-client.ts` deliberately. One private `request`
+helper does fetch, JSON parse, and error shaping; six exported functions name the calls
+(`fetchQuestions`, `fetchQuestion`, `createQuestion`, `updateQuestion`, `deleteQuestion`,
+`submitAttempt`). The result type is a discriminated union:
+
+```ts
+export type ApiResult<T> =
+	| { ok: true; data: T }
+	| { ok: false; status: number | null; fields: Record<string, string>; message: string | null };
+```
+
+Two departures from `auth-client.ts`, both earning their keep:
+
+- **`status` is carried.** `auth-client.ts` does not need it; the MCQ UI does, because a
+  404 is a normal outcome that renders a "question not found" card while a 500 is a failure
+  that renders an alert. `status` is `null` when the request never reached the server.
+- **`data` is carried.** The auth forms only need to know whether the call worked. The MCQ
+  UI needs the created question, the verdict, and the correct choice id.
+
+The `fields`/`message` split is copied exactly: when the server returns per-field errors the
+message is `null`, because the inputs carry the detail and a form-level banner would only
+repeat it. Non-string values inside `fields` are dropped rather than rendered.
+
+**Types are declared locally rather than imported from `mcq-service.ts`.** A type-only
+import would erase at build time, but declaring `QuestionView`, `QuestionSummaryView` and
+`AttemptView` in the client module keeps a client-side file from naming a module that
+imports `@opennextjs/cloudflare`. `ChoiceView.isCorrect` is optional, which is the type
+system carrying the `?include=answers` rule: a caller that did not ask for answers cannot
+read the flag without checking.
+
+**`question-form.tsx` serves create and edit from one component**, discriminated on `mode`:
+
+```ts
+type Props =
+	| { mode: "create"; question?: undefined }
+	| { mode: "edit"; question: QuestionView };
+```
+
+The choice list is `{ key, text }[]` with a module-level counter generating keys. Keys, not
+array indices, are what let a choice be removed from the middle without React reusing the
+wrong input — proven by the test that removes choice 2 of 3 and checks the remaining text
+moved up. The correct answer is held as a single `correctKey`, not a boolean per choice,
+which makes "exactly one correct" true by construction in the UI; the schema still enforces
+it because the API is authoritative.
+
+Validation runs `questionInputSchema` — the route's own schema, imported, not a copy — and
+`pathErrors` flattens the issues to keys like `choices.1.text` that the choice rows read
+directly. This is why the browser shows the same five messages the API would return.
+
+**`question-list.tsx` is the client island.** The route file stays a Server Component
+holding the header, and pushes `'use client'` down to the list, per `nextjs.mdc`. The search
+filter is a `useMemo` over state already in memory, so typing causes no request — the test
+counts requests to prove it, and the walkthrough confirms zero extra GETs. Deleting a row
+splices client state rather than refetching. An empty bank renders a card; a filter that
+matches nothing renders a row saying so. They are different situations and do not read the
+same.
+
+**`attempt-form.tsx` never decides correctness.** It posts the choice id and renders what
+came back. The verdict is in words — "Correct" or "Not quite. The correct answer was X" —
+because colour alone is not available to every reader. After submitting, the radios are
+disabled and the submit button is replaced by "Try again", so a double-click cannot record a
+second attempt by accident; "Try again" deliberately can, because attempts are a log, not a
+score.
+
+#### Browser walkthrough
+
+Driven with Playwright against `npm run dev` on `http://localhost:3000`, capturing a real
+screenshot at each step. Evidence is in `ai-workspace/phase4-walkthrough/`:
+`transcript.txt`, 22 PNGs, and `walkthrough.mjs`, the harness that produced them.
+
+What it proves, in order:
+
+| Step | Screenshot | What it shows |
+| --- | --- | --- |
+| Skeletons | `01` | 24 skeleton elements in the table body with the list fetch held open; search box absent until loaded |
+| List | `02` | Both seeded rows with name, question text and choice-count badges |
+| Search | `03`, `04` | Typing `planet` narrows to one row with **0** extra `GET /api/mcq`; `zzz` shows "No questions match that search", not the empty-bank card |
+| Invalid form | `05`, `06` | Submitting blank yields five inline errors and stays on the page |
+| Choice limits | `07`, `08` | Six choices disables "Add choice" and shows the reason; "Remove choice 1" disabled at two; submitting with nothing marked correct is refused |
+| Create | `09`, `10` | Toast "Question created", navigation to `/mcq`, new row reading `Ocean depth \| Which is the deepest ocean trench? \| 3` |
+| Row actions | `11` | One trigger opening to Preview / Edit / Delete with the right hrefs |
+| Edit | `12`, `13`, `14` | Form seeded including the pre-marked correct choice, button reading "Save changes", toast "Question updated", row updated in place |
+| Attempt, wrong | `15`, `16` | Submit disabled until a choice is picked, nothing revealed early, then "Not quite. The correct answer was “Mariana Trench”." with the badge beside it and submit replaced by "Try again" |
+| Attempt, right | `17` | "Try again" clears the result and re-disables submit; a correct pick reads "Correct" |
+| Delete | `18`, `19`, `20` | Dialog naming the question and warning it cannot be undone; Cancel leaves the row; confirming toasts "Question deleted" and removes the row without a reload |
+| Not found | `21` | A nonexistent id renders the not-found card, not a crash |
+| Empty state | `22` | With every question deleted: the card, no table, no search box, button to `/mcq/new` |
+
+Two false alarms during the walkthrough were run down rather than accepted, both logged in
+troubleshooting: an "edit shows the create toast" reading that turned out to be a stale
+toast still on screen, and a "delete does nothing" reading caused by a broken edit to the
+harness.
 
 ### Phase 5: End-to-End Verification - PLANNED
 
@@ -1076,13 +1201,18 @@ assert it from the Node dev server.
 
 **Tasks**:
 1. `npm test`, `npm run lint`, `npm run build` — paste the real output of each.
-2. `npm run preview` to build and serve on the local Workers runtime. Expect the `esbuild`
-   resolution failure Sprint 1 recorded, because Phase 4's installs will have destroyed the
-   `node_modules` junction; recreate it from the Troubleshooting entry, or revisit open
-   decision 7.
+2. `npm run preview` to build and serve on the local Workers runtime. The `esbuild` junction
+   was recreated at the end of Phase 4 and verified, so preview should start — but check
+   `node_modules\esbuild\package.json` exists first, and do not run any `npm install` before
+   this step. Phase 4 confirmed twice that an install destroys it. Open decision 7 still
+   needs settling.
 3. Walk the whole feature in a browser against `http://127.0.0.1:8787`: create a question,
    see it in the list, search for it, edit it, attempt it right and wrong, and delete it
-   through the confirmation dialog.
+   through the confirmation dialog. Reuse
+   `ai-workspace/phase4-walkthrough/walkthrough.mjs` with `BASE` pointed at port 8787 —
+   `playwright` is already a devDependency and Chromium is already downloaded, so this is a
+   real browser walkthrough with screenshots, not a terminal transcript. Write the output to
+   a `phase5-walkthrough` folder so Phase 4's evidence is not overwritten.
 4. Query local D1 to confirm the rows: the question and its choices, exactly one
    `is_correct = 1` per question, one `mcq_attempts` row per submitted attempt with the
    right `is_correct`, and `created_by` and `user_id` both null.
@@ -1374,14 +1504,27 @@ Delivered in Phase 3:
 - `src/app/api/mcq/[id]/route.ts` — `GET`, `PUT`, `DELETE`, with `route.test.ts`, 22 tests
 - `src/app/api/mcq/[id]/attempts/route.ts` — `POST`, with `route.test.ts`, 18 tests
 
-Planned for Phase 4:
+Built in Phase 4:
 
-- `src/lib/mcq-client.ts` — the UI's one way of calling the MCQ API
-- `src/components/mcq/question-list.tsx`, `question-form.tsx`, `attempt-form.tsx`,
-  `question-row-actions.tsx`, `delete-question-dialog.tsx`
-- `src/app/mcq/page.tsx` (rewritten), `src/app/mcq/new/page.tsx`,
-  `src/app/mcq/[id]/edit/page.tsx`, `src/app/mcq/[id]/attempt/page.tsx`
-- `src/app/layout.tsx` — gains `<Toaster />`
+- `src/lib/mcq-client.ts` — the UI's one way of calling the MCQ API, with
+  `mcq-client.test.ts`, 24 tests
+- `src/components/mcq/question-form.tsx` — create and edit in one component, 22 tests
+- `src/components/mcq/question-list.tsx` — the client island: fetch, search, skeletons,
+  empty state, 16 tests
+- `src/components/mcq/question-row-actions.tsx` — dropdown plus the delete confirmation,
+  8 tests
+- `src/components/mcq/attempt-form.tsx` — answer, verdict, try again, 13 tests
+- `src/components/mcq/question-loader.tsx` — one question by id for the edit and attempt
+  pages, 7 tests
+- `src/app/mcq/page.tsx` (rewritten, `page.test.tsx` rewritten with it, 5 tests),
+  `src/app/mcq/new/page.tsx`, `src/app/mcq/[id]/edit/page.tsx`,
+  `src/app/mcq/[id]/attempt/page.tsx`
+- `src/app/layout.tsx` — gained `<Toaster />`
+- `src/components/ui/` — `dropdown-menu`, `alert-dialog`, `radio-group`, `textarea`,
+  `sonner`, `skeleton`, all generated by the CLI and unedited
+
+There is no `delete-question-dialog.tsx`; the dialog lives in `question-row-actions.tsx`.
+`question-loader.tsx` was not in the plan. Both are explained under Phase 4.
 
 ### Implementation Patterns
 
@@ -1687,37 +1830,54 @@ parameter, so this is neatness rather than security, and it costs a branch in th
 document the leak, or to add a separate attempt-facing endpoint. Confirm the query
 parameter, or pick one of those.
 
-**BUILT AS SPECIFIED IN PHASE 3, BUT STILL YOURS TO CONFIRM.** Phase 3 implemented the query
-parameter because it was the PRD's documented default and Phase 4's edit form needs the
-answers from somewhere. Nothing about that reading is new, and changing it later is a small
-edit to one branch in `src/app/api/mcq/[id]/route.ts` plus its tests. Two things to weigh: the
-parameter is not a security boundary, since anyone can pass it; and the `PUT` response returns
-answers unconditionally, because its only caller is the edit form.
+**BUILT AS SPECIFIED IN PHASE 3, EXERCISED BY PHASE 4, STILL YOURS TO CONFIRM.** Phase 3
+implemented the query parameter because it was the PRD's documented default and Phase 4's
+edit form needs the answers from somewhere. Phase 4 now has both callers in place and they
+split exactly as intended: `QuestionLoader` passes `includeAnswers` only in `edit` mode, so
+the edit form gets the correct flags while the attempt page does not. Tests assert both URLs,
+and the walkthrough shows the edit form seeded with choice 1 pre-marked correct (`12`) while
+the attempt page reveals nothing before submission (`15`).
 
-**6. `sonner` as a dependency — needs approval.** The toasts you asked for come from
-`npx shadcn@latest add @shadcn/sonner`, which installs the `sonner` npm package. `AGENTS.md`
-requires proposing a dependency and saying why, so: it is the shadcn-sanctioned toast for
-this stack, roughly 15 kB, no transitive dependencies of note, and hand-rolling a toast
-system with a portal, a queue, and timers is more code and worse. The other five components
-(`dropdown-menu`, `alert-dialog`, `radio-group`, `textarea`, `skeleton`) are source files
-copied into the repo and add no package. I need an explicit yes on `sonner` before Phase 4.
+Changing it later is still a small edit to one branch in `src/app/api/mcq/[id]/route.ts` plus
+its tests. Two things to weigh, unchanged: the parameter is not a security boundary, since
+anyone can pass it; and the `PUT` response returns answers unconditionally, because its only
+caller is the edit form.
 
-**7. `esbuild`, again.** Phase 4 runs `npm install` through the shadcn CLI, which will delete
-the untracked `node_modules/esbuild` junction Sprint 1 used to make `npm run preview` work.
-Phase 5 will therefore fail on `ERR_MODULE_NOT_FOUND` until it is recreated. You declined
-`esbuild@0.25.4` as a devDependency on Aug 23 and I am not reopening it on my own, but this
-sprint is graded on a live URL, so preview and deploy both have to work reliably. Options:
-recreate the junction in Phase 5 as a documented step, add the devDependency now, or check
-whether a newer `@opennextjs/cloudflare` has fixed the upstream packaging bug — worth a look
-either way, since a fixed upstream removes the problem outright.
+**6. `sonner` as a dependency — SETTLED in Phase 4: approved.** Manikanta approved it when
+starting the phase and it was installed with the CLI. One correction to the reasoning above:
+it did **not** arrive without transitive dependencies of note. shadcn's generated
+`sonner.tsx` imports `useTheme` from `next-themes`, so that package is on the lockfile too.
+It was flagged in the chat rather than absorbed silently; see troubleshooting for why it was
+accepted instead of hand-edited away. The other five components added no package, as
+predicted.
 
-**8. Two smaller things, my defaults unless you object.**
-- **Where the "New question" button lives.** I have it on `/mcq` beside the heading, with a
-  second one inside the empty-state card, since an empty table with the only call to action
-  elsewhere reads badly.
-- **What happens after a successful attempt.** I have it staying on the attempt page showing
-  the result, with a "Try again" control and a link back to `/mcq`, rather than redirecting.
-  Redirecting would throw away the feedback the feature exists to show.
+`playwright` was also approved during Phase 4, as a devDependency, specifically so the
+browser walkthrough could produce real screenshots instead of terminal output standing in
+for browser evidence. It is dev-only and is not bundled into the Worker.
+
+**7. `esbuild`, again — STILL OPEN, and now confirmed rather than predicted.** This was a
+forecast when written; Phase 4 proved it twice. Both `npm install` runs — the shadcn CLI and
+`playwright` — deleted the untracked `node_modules/esbuild` junction that Sprint 1 used to
+make `npm run preview` work. It was recreated after each and is in place now, verified.
+
+You declined `esbuild@0.25.4` as a devDependency on Aug 23 and I am not reopening that on my
+own, but this sprint is graded on a live URL, so preview and deploy both have to work
+reliably, and "silently broken by any install" is a bad property to carry into Phase 5.
+Options, unchanged: recreate the junction as a documented Phase 5 step, add the
+devDependency, or check whether a newer `@opennextjs/cloudflare` has fixed the upstream
+packaging bug — still worth a look, since a fixed upstream removes the problem outright.
+**This needs an answer before Phase 5 starts.**
+
+**8. Two smaller things — SETTLED in Phase 4: both defaults shipped, unobjected.**
+- **Where the "New question" button lives.** On `/mcq` beside the heading, with a second one
+  inside the empty-state card. Walkthrough `02` and `22` show both.
+- **What happens after a successful attempt.** It stays on the attempt page showing the
+  result, with "Try again" and a link back to `/mcq`. Walkthrough `16` and `17`. Submit is
+  replaced by "Try again" once answered, so a double-click cannot record a second attempt by
+  accident; "Try again" deliberately can, because attempts are a log rather than a score.
+
+A third thing was decided in the same spirit during the phase: the row action is labelled
+**Preview** rather than "Attempt", at Manikanta's request. Same destination.
 
 ---
 
@@ -1817,8 +1977,10 @@ beside it, the way Sprint 1's criteria were.
       this question`, both by curl; a missing question is a 404, kept distinct)
 - [x] Every handler validates its body with a Zod schema before use (and in `PUT`, before the
       id is used at all, so a bad body cannot be reported as a 404)
-- [ ] The form and the API enforce the same rules, because they import the same schema
-      (schema exported and ready; the form arrives in Phase 4, so this is ticked there)
+- [x] The form and the API enforce the same rules, because they import the same schema
+      (`question-form.tsx` imports `questionInputSchema` and `pathErrors` from
+      `src/lib/validation/mcq.ts` — the route's own module, not a copy; the walkthrough shows
+      the browser producing the same five messages the API returns)
 - [x] No 500 response body contains an underlying error message (each route forced to fail
       with `D1_ERROR: database is locked`, and the serialised body asserted not to contain
       `D1_ERROR`)
@@ -1828,31 +1990,59 @@ beside it, the way Sprint 1's criteria were.
 
 **UI (Phase 4)**
 
-- [ ] `/mcq` lists questions in a table with name, truncated question text, choice count,
-      and actions
-- [ ] The Sprint 1 stub copy is gone from `/mcq`
-- [ ] The search input filters loaded rows without a second network request, asserted by
-      counting `fetch` calls
-- [ ] An empty bank shows the empty-state card with a button that reaches the create form
-- [ ] A search matching nothing shows a "no matches" row, not the empty-state card
-- [ ] Row actions are in a dropdown menu, not three bare buttons
-- [ ] Skeleton rows show while the list is loading and are gone once it has loaded
-- [ ] Create and edit render from the same form component
-- [ ] The choice list adds and removes choices, blocked below two and above six
-- [ ] The radio group marks exactly one choice correct, and the form rejects zero or two
-- [ ] Every validation rule shows a readable message against the field it belongs to,
-      including per-choice messages against the right choice row
-- [ ] Creating a question raises a success toast and lands back on the list with the new row
-- [ ] Editing raises a success toast and shows the updated values
-- [ ] Delete requires confirming a dialog naming the question; cancelling changes nothing
-- [ ] Deleting raises a success toast and removes the row
-- [ ] The attempt page shows the choices as a radio group in `position` order, with submit
-      disabled until one is chosen
-- [ ] Submitting an attempt says clearly whether it was right and shows which choice was
-      correct, conveyed by text rather than colour alone
-- [ ] Every new shadcn component was installed with the CLI and left unedited
-- [ ] Any new package went in through `npm install`, with the `package-lock.json` change
-      committed. No hand-made `node_modules` junction stands in for a dependency
+- [x] `/mcq` lists questions in a table with name, truncated question text, choice count,
+      and actions (walkthrough `02`; the row reads
+      `Capital of France | Which city is the capital of France? | 3`)
+- [x] The Sprint 1 stub copy is gone from `/mcq` (`page.test.tsx` asserts both
+      `/later sprint/i` and "Placeholder" are absent; walkthrough `02` shows the table)
+- [x] The search input filters loaded rows without a second network request, asserted by
+      counting `fetch` calls (the test pins exactly 1 call after typing; the walkthrough
+      counted **0** extra `GET /api/mcq`, screenshot `03`)
+- [x] An empty bank shows the empty-state card with a button that reaches the create form
+      (walkthrough `22`: card shown, no table rendered at all, button href `/mcq/new`)
+- [x] A search matching nothing shows a "no matches" row, not the empty-state card
+      (walkthrough `04`: "No questions match that search", empty-bank card absent)
+- [x] Row actions are in a dropdown menu, not three bare buttons (walkthrough `11`: one
+      trigger opening to Preview / Edit / Delete; a test asserts no `menuitem` exists while
+      the menu is closed)
+- [x] Skeleton rows show while the list is loading and are gone once it has loaded (the test
+      holds the fetch open, asserts skeletons, releases it and asserts they go; walkthrough
+      `01` shows 24 skeleton elements with the request held)
+- [x] Create and edit render from the same form component (`QuestionForm`, discriminated on
+      `mode`; both pages render it, walkthrough `05` and `12`)
+- [x] The choice list adds and removes choices, blocked below two and above six (walkthrough
+      `07`: six choices, "Add choice" disabled with the reason shown; "Remove choice 1"
+      disabled at two)
+- [x] The radio group marks exactly one choice correct, and the form rejects zero or two (a
+      test asserts exactly one `aria-checked` after clicking two radios — the UI holds a
+      single `correctKey`, so two is unrepresentable; walkthrough `08` shows zero refused)
+- [x] Every validation rule shows a readable message against the field it belongs to,
+      including per-choice messages against the right choice row (walkthrough `06` shows all
+      five at once; a test asserts choice 2 carries `aria-invalid` while choice 1 does not)
+- [x] Creating a question raises a success toast and lands back on the list with the new row
+      (walkthrough `09`, `10`: toast "Question created", then the new row)
+- [x] Editing raises a success toast and shows the updated values (walkthrough `13`, `14`:
+      toast "Question updated", row renamed in place)
+- [x] Delete requires confirming a dialog naming the question; cancelling changes nothing
+      (walkthrough `18`: dialog quotes "Deepest ocean trench" and warns it cannot be undone;
+      Cancel left the row in place)
+- [x] Deleting raises a success toast and removes the row (walkthrough `19`, `20`: toast
+      "Question deleted", row gone without a reload)
+- [x] The attempt page shows the choices as a radio group in `position` order, with submit
+      disabled until one is chosen (walkthrough `15`; a test feeds the choices out of order
+      and asserts they render sorted)
+- [x] Submitting an attempt says clearly whether it was right and shows which choice was
+      correct, conveyed by text rather than colour alone (walkthrough `16`: "Not quite. The
+      correct answer was “Mariana Trench”." plus a "Correct answer" badge beside that choice;
+      `17` reads "Correct")
+- [x] Every new shadcn component was installed with the CLI and left unedited (one
+      `npx shadcn@latest add` call created all six; `button.tsx` was left as-is rather than
+      overwritten)
+- [x] Any new package went in through `npm install`, with the `package-lock.json` change
+      committed. No hand-made `node_modules` junction stands in for a dependency (`sonner`,
+      `next-themes` and `playwright` are all real installs on the lockfile. The pre-existing
+      `esbuild` junction is Sprint 1's documented upstream workaround, not a dependency
+      substitute — and it was recreated after both installs destroyed it)
 
 **Verification (Phase 5)**
 
@@ -1884,19 +2074,20 @@ beside it, the way Sprint 1's criteria were.
 
 ## Success Metrics
 
-Filled in at Phase 5.
+Provisional results below are from Phase 4 on the dev server. Phase 5 re-measures them on the
+Workers runtime and fills the remaining gaps.
 
 | Metric | Target | How Measured | Result |
 |--------|--------|--------------|--------|
-| Question creation time | A teacher creates a question in under 60 seconds | One form, one submit; timed during the Phase 5 browser walk | |
-| Data integrity | 0 questions in the database with fewer than two choices or without exactly one correct choice | SQL over local D1 after the Phase 5 walk | |
-| Attempts are never lost | 100% of submitted attempts appear in `mcq_attempts` with the right `is_correct` | Count submitted attempts during the walk, compare with `SELECT COUNT(*)` | |
-| Correctness is decided server-side | 0 paths where client input determines correctness | Code review plus a service test that sends a false `isCorrect` and is ignored | |
-| Test coverage of the MCQ surface | Every service function and every documented status code has a test | Test count and a checklist against the endpoint list | |
-| Validation parity | 0 rules the form accepts and the API rejects, or the reverse | Both import the same schema; asserted by a test that the form uses `questionInputSchema` | |
-| Search feels instant | Filtering issues no network request | Assert `fetch` call count is unchanged while typing |  |
-| Sprint stays in scope | 0 out-of-scope features built | No cookie, token, session, or middleware in `src/`; no out-of-scope item from the list above |  |
-| Accidental data loss | 0 questions deleted without a confirmation step | Delete is only reachable through the `AlertDialog`, asserted by test |  |
+| Question creation time | A teacher creates a question in under 60 seconds | One form, one submit; timed during the Phase 5 browser walk | Provisional: the walkthrough filled and submitted the whole form in well under a minute of wall time, but it was scripted, so this is not yet a fair reading of a human doing it |
+| Data integrity | 0 questions in the database with fewer than two choices or without exactly one correct choice | SQL over local D1 after the Phase 5 walk | Pending Phase 5 |
+| Attempts are never lost | 100% of submitted attempts appear in `mcq_attempts` with the right `is_correct` | Count submitted attempts during the walk, compare with `SELECT COUNT(*)` | Pending Phase 5 |
+| Correctness is decided server-side | 0 paths where client input determines correctness | Code review plus a service test that sends a false `isCorrect` and is ignored | Met. `submitAttempt` posts only `{ choiceId }`; `attempt-form.tsx` renders the returned verdict and computes nothing |
+| Test coverage of the MCQ surface | Every service function and every documented status code has a test | Test count and a checklist against the endpoint list | Met for phases 1–4: 301 MCQ tests (77 schema, 50 service, 86 routes, 88 UI) |
+| Validation parity | 0 rules the form accepts and the API rejects, or the reverse | Both import the same schema; asserted by a test that the form uses `questionInputSchema` | Met. `question-form.tsx` imports `questionInputSchema` and `pathErrors` from the route's own module; walkthrough `06` shows the browser producing the API's messages |
+| Search feels instant | Filtering issues no network request | Assert `fetch` call count is unchanged while typing | Met. Test pins exactly 1 call after typing; walkthrough counted 0 extra `GET /api/mcq` |
+| Sprint stays in scope | 0 out-of-scope features built | No cookie, token, session, or middleware in `src/`; no out-of-scope item from the list above | Holding. No session work was added; `created_by` and `user_id` are still null everywhere. Phase 5 does the grep to confirm |
+| Accidental data loss | 0 questions deleted without a confirmation step | Delete is only reachable through the `AlertDialog`, asserted by test | Met. A test proves the menu item alone sends no request; walkthrough `18` shows Cancel leaving the row intact |
 
 ---
 
@@ -1921,25 +2112,32 @@ Already present, nothing to install:
   `@testing-library/user-event`, `jsdom`, `vite-tsconfig-paths`
 - `node:sqlite` — Node 24 built-in, already used by `migrations/schema.test.ts`
 
-Needs approval before Phase 4 (open decision 6):
+Added in Phase 4, all approved and on the lockfile:
 
-- `sonner` — the toast library behind `@shadcn/sonner`. The only new npm package this
-  sprint needs.
+- `sonner` `^2.0.8` — the toast library behind `@shadcn/sonner`. Approved by Manikanta.
+- `next-themes` `^0.4.6` — **not requested.** Pulled in because shadcn's generated
+  `sonner.tsx` imports `useTheme` from it. Flagged in the chat and accepted rather than
+  hand-editing a generated `ui/` file. See troubleshooting.
+- `playwright` `^1.62.1`, devDependency — approved so the Phase 4 walkthrough could produce
+  real browser screenshots rather than terminal output standing in for browser evidence.
+  Dev-only; not bundled into the Worker. Chromium is downloaded separately with
+  `npx playwright install chromium` and lives outside the repo.
 
-Possibly needed, open decision 1:
+Not needed after all, open decision 1:
 
-- `@cloudflare/vitest-pool-workers` — only under option A for Phase 2 testing. Not wanted
-  under the recommended option B.
+- `@cloudflare/vitest-pool-workers` — would only have been required under option A for Phase
+  2 testing. Option B shipped, so this was never installed.
 
-Possibly needed, open decision 7:
+Possibly needed, open decision 7 — still open:
 
 - `esbuild@0.25.4` as a devDependency, or the `node_modules` junction recreated instead.
+  Phase 4 recreated the junction twice, after each `npm install` destroyed it.
 
-### shadcn components to add with the CLI
+### shadcn components added with the CLI
 
-These are source files copied into the repository, not packages:
-`dropdown-menu`, `alert-dialog`, `radio-group`, `textarea`, `skeleton`, and `sonner`
-(which does bring the package above).
+Source files copied into the repository, not packages: `dropdown-menu`, `alert-dialog`,
+`radio-group`, `textarea`, `skeleton`, and `sonner` (which does bring the packages above).
+All six were added in Phase 4 by a single `npx shadcn@latest add` call and left unedited.
 
 ### Internal Dependencies
 
@@ -1993,15 +2191,26 @@ These are source files copied into the repository, not packages:
 
 - **Risk**: Phase 4's `npm install` deletes the untracked `esbuild` junction, so Phase 5's
   `npm run preview` fails — and so would the deploy this sprint is graded on.
-- **Mitigation**: called out in the Phase 5 tasks as expected rather than surprising, with
-  open decision 7 offering a permanent fix. The Sprint 1 troubleshooting entry has the
-  command.
+- **MATERIALISED in Phase 4, twice.** Both the shadcn install and the `playwright` install
+  removed it. Recreated and verified after each, so it is in place going into Phase 5. This
+  is no longer a risk to watch but a known behaviour: any install breaks preview until the
+  junction is restored. Open decision 7 is the permanent fix and is still open.
 
 - **Risk**: a shadcn component has no Base UI equivalent and silently installs nothing, so an
   import fails much later with a confusing error.
-- **Mitigation**: `shadcn.mdc` warns about exactly this. Each install is verified by
-  confirming the file appeared in `src/components/ui/` before anything imports it. If one is
-  missing, it is raised rather than hand-written.
+- **Did not materialise.** All six components produced files, verified before anything
+  imported them. The CLI did report skipping `button.tsx` as identical, which is a different
+  thing and was left alone rather than forced with `--overwrite`.
+
+- **Risk**: a Base UI component cannot be driven in jsdom, so a component test either passes
+  vacuously or the behaviour goes untested. Not anticipated when this list was written.
+- **MATERIALISED in Phase 4.** Base UI's dropdown trigger cannot open a menu under jsdom.
+  Root-caused with a probe rather than worked around blindly — a menu rendered open behaves
+  correctly, and the trigger can close but not open. Handled by forwarding the primitive's own
+  `defaultOpen` so the tests reach the menu contents, with opening by click covered in the
+  browser walkthrough. Full detail in troubleshooting. The general lesson for Phase 5: where
+  jsdom cannot reach a behaviour, prove it in the browser rather than writing an assertion
+  that cannot fail.
 
 - **Risk**: the list page becomes a large client component that pulls server-only code in
   behind it, breaking the build or leaking database access into the browser bundle.
@@ -2206,6 +2415,100 @@ latest Microsoft Visual C++ Redistributable (x64) and reboot.
 **Solution**: call `curl.exe` explicitly, write the body to a file, and send it with
 `--data-binary "@file"`. See Sprint 1's "Manual API Verification".
 
+### Base UI's dropdown trigger cannot open a menu under jsdom (found in Phase 4, worked around)
+
+**Problem**: every `question-row-actions.test.tsx` test that needed a menu item failed with
+`Unable to find an accessible element with the role "menuitem"`. The trigger rendered
+correctly and kept `aria-expanded="false"` after `userEvent.click`.
+**What was ruled out**: polyfilling `ResizeObserver`, `matchMedia`,
+`Element.prototype.hasPointerCapture` / `setPointerCapture` / `releasePointerCapture` /
+`scrollIntoView`, `document.elementFromPoint`, and a non-zero
+`Element.prototype.getBoundingClientRect` changed nothing. Neither did driving the trigger
+with raw `fireEvent.pointerDown`, `mouseDown`, `click`, or `keyDown{Enter}`.
+**Cause**: narrowed with a throwaway probe. A menu rendered with `open` or `defaultOpen`
+works perfectly in jsdom — the popup mounts, the items carry `role="menuitem"` and their
+hrefs — and clicking the trigger *closes* an already-open menu. So the handler is attached
+and the state machine works; only the open path is blocked. `jsdom` reports
+`Element.prototype.getAnimations` and `animate` as `undefined`, so Base UI's open sequence
+has no Web Animations API to resolve against. This is a Base UI + jsdom limitation, not a
+defect in `question-row-actions.tsx`.
+**Solution**: `QuestionRowActions` takes a `defaultMenuOpen` prop that forwards straight to
+the primitive's own `defaultOpen`, and the tests start the menu open to reach its contents.
+Production code never passes it. Opening by click is genuinely browser-only behaviour and is
+covered by the walkthrough instead — screenshot `11` shows the menu open with Preview, Edit
+and Delete after a real click in Chromium. The five polyfills above are still needed in that
+test file for the popup and dialog to mount at all.
+**Code Reference**: `src/components/mcq/question-row-actions.tsx:31`,
+`src/components/mcq/question-row-actions.test.tsx:17`
+
+### shadcn's `sonner` component quietly adds `next-themes` (found in Phase 4, accepted)
+
+**Problem**: `npx shadcn@latest add @shadcn/sonner` put two packages on the lockfile, not
+one. Only `sonner` was approved.
+**Cause**: the generated `src/components/ui/sonner.tsx` opens with
+`import { useTheme } from "next-themes"` so the toaster can follow the app's theme. The
+dependency belongs to shadcn's template, not to anything this sprint asked for.
+**Solution**: accepted rather than worked around. Removing it would mean hand-editing a
+generated file in `src/components/ui/`, which this PRD and `shadcn.mdc` both forbid, and the
+app has no `ThemeProvider`, so `useTheme` simply returns the default and the toaster renders
+from the existing `--popover` tokens. Flagged to Manikanta in the chat rather than slipped
+into the lockfile silently.
+**Code Reference**: `src/components/ui/sonner.tsx:3`
+
+### The `esbuild` junction is destroyed by every `npm install` (confirmed twice in Phase 4)
+
+**Problem**: risk 7 predicted this and Phase 4 proved it. Both the shadcn install and the
+`playwright` install removed `node_modules/esbuild`, which is the hand-made junction
+`npm run preview` depends on.
+**Solution**: recreated after each install with
+`New-Item -ItemType Junction -Path node_modules\esbuild -Target node_modules\@opennextjs\aws\node_modules\esbuild`,
+verified by checking `node_modules\esbuild\package.json` exists. It is in place now.
+**Why it matters for Phase 5**: this is no longer a theoretical risk. Any install before or
+during Phase 5 silently breaks `npm run preview` in a way that looks like a build bug.
+Decision 7 should settle whether the junction becomes a real dependency or a documented
+postinstall step before Phase 5 starts.
+
+### A walkthrough reading that looked like a bug: edit raised the create toast (found in Phase 4, was the harness)
+
+**Problem**: the first full walkthrough reported the toast after **Save changes** as
+"Question created", contradicting both the passing unit test and the code, which reads
+`mode === "edit" ? "Question updated" : "Question created"`.
+**Cause**: checked against the screenshot rather than assumed. Screenshot `13` showed the
+submit button still reading "Saving…" and the *previous* toast — "Question created" from the
+create step about three seconds earlier — still on screen. Sonner toasts live for roughly
+four seconds, and the harness read the first `[data-sonner-toast]` in the DOM, so it captured
+the stale one before the new one existed.
+**Solution**: the harness now waits for every toast to clear before each measured action, so
+the next reading is unambiguous. The rerun reports "Question updated", as it always should
+have. Worth recording because the naive reading would have sent someone hunting a bug in
+correct code.
+**Code Reference**: `ai-workspace/phase4-walkthrough/walkthrough.mjs`, `waitForNoToasts`
+
+### A second false alarm: delete appeared to do nothing (found in Phase 4, was the harness)
+
+**Problem**: the same rerun then reported `Toast said: "(no toast appeared)"` and
+`Row gone without a reload? false` for the delete step.
+**Cause**: the regex used to insert the toast-clearing wait had swallowed the two lines that
+waited for the dialog and clicked "Delete question". The delete was never triggered, so
+nothing happened — correctly.
+**Solution**: restored the sequence by hand and reran. Both readings are green. The lesson is
+the one already in this document: when a scripted edit changes behaviour, suspect the script
+before the application.
+
+### Five jsdom test files starting at once can exceed the worker startup timeout (found in Phase 4, intermittent)
+
+**Problem**: `npx vitest run src/components/mcq` intermittently failed before running a
+single test, with `[vitest-pool]: Failed to start threads worker` and
+`Timeout waiting for worker to respond` for all five files after a flat 60s.
+**Cause**: resource contention on this machine, not a defect in the tests. A single jsdom
+file cold takes ~44s with ~28s of that in `import`; five booting concurrently on a cold
+transform cache overruns the pool's startup timeout. Confirmed by checking for stray
+processes — only the editor's three — and by the same command passing in 12.6s once warm.
+**Solution**: no config change. The full `npm test` passes reliably (459 tests, ~18s warm),
+and `--pool=forks` is a dependable fallback that ran all 64 component tests green when
+`threads` was flaking. Recorded so a one-off failure here is recognised as flake rather than
+treated as a broken suite. `vitest.config.ts` keeps `pool: "threads"` for speed.
+
 ---
 
 ## Notes for AI Agents
@@ -2224,8 +2527,9 @@ latest Microsoft Visual C++ Redistributable (x64) and reboot.
 5. Colocate tests with their subject, as `user-service.test.ts` sits beside
    `user-service.ts`. Opt into jsdom per file with `// @vitest-environment jsdom`; do not
    change `vitest.config.ts` to make it global.
-6. **Ask before adding any dependency**, per `AGENTS.md`. `sonner` is proposed and not yet
-   approved. Anything else needs a fresh conversation.
+6. **Ask before adding any dependency**, per `AGENTS.md`. `sonner` and `playwright` were
+   approved in Phase 4; `next-themes` arrived with shadcn's `sonner` template and was
+   flagged, not smuggled. Anything else needs a fresh conversation.
 7. **Real installs only.** A package goes in through `npm install`, a shadcn component
    through `npx shadcn@latest add @shadcn/<name>`, and the `package-lock.json` change is
    committed with the phase. No hand-made `node_modules` junction stands in for a
@@ -2260,35 +2564,46 @@ latest Microsoft Visual C++ Redistributable (x64) and reboot.
 
 ## Current Status
 
-**Last Updated**: Aug 31, 2026 (Phase 3 COMPLETED)
-**Current Phase**: Phase 3 — API Routes and Validation, COMPLETED. Phase 4 not started and
-will not start until Manikanta says "go Phase 4".
+**Last Updated**: Aug 31, 2026 (Phase 4 COMPLETED)
+**Current Phase**: Phase 4 — UI and Polish, COMPLETED. Phase 5 not started and will not start
+until Manikanta says "go Phase 5".
 **Branch**: `feature/mcq-crud`, branched from `origin/main` after Sprint 1 merged as
-`1bf5a54`. Four commits, all pushed:
+`1bf5a54`. Five commits, all pushed:
 - `4731310 chore: add phase commit workflow rule`
 - `ca8e9c0 chore: require approval before staging, committing, pushing, or deploying`
 - `bae47e9 phase 1: add MCQ tables migration and schema tests`
 - `5d3bb9a phase 2: add MCQ service with real-SQLite tests`
+- `e2b866e phase 3: add MCQ API routes and Zod validation`
 
-Phase 3's six files are **uncommitted** and awaiting Manikanta's review of the routes —
+Phase 4's files are **uncommitted** and awaiting Manikanta's review of the walkthrough —
 nothing has been staged.
-**Status**: The three MCQ tables exist in the local D1 database, every database call lives
-behind `mcq-service.ts`, and all six endpoints are live and validated. 369 tests pass in 21
-files and lint is clean. Every documented status code was produced by curl against
-`npm run dev` on the real local D1, and local D1 was left at 0 rows in all three tables. The
-remote database has never been touched and nothing has been deployed.
-**Known caveat**: `npx tsc --noEmit` reports 14 pre-existing errors in Sprint 1's two auth
-route test files, 0 in anything Phases 1 to 3 created. See Troubleshooting for the decision
-needed.
-**Baseline preserved**: Sprint 1's 156 tests still pass. Phase 1 added 77, Phase 2 added 50,
-Phase 3 added 86.
-**Open decisions**: 1 and 3 are settled and marked as such. 2 and 4 are closed by what
-shipped. 5 was built as the PRD specified but is still worth your confirmation. **Decision 6
-(`sonner`) blocks Phase 4** and needs an explicit yes. Decision 7 (`esbuild`) blocks Phase 5.
-Decision 8 is wanted before Phase 4.
-**Next Steps**: Manikanta reviews the Phase 3 routes and the proposed commit, approves or
-amends it, then says "go Phase 4". Decisions 6 and 8 are needed in the same pass, since Phase
-4 cannot start without the `sonner` answer.
+**Status**: The feature is complete end to end on the dev server. The three MCQ tables exist
+in local D1, every database call lives behind `mcq-service.ts`, all six endpoints are live
+and validated, and the UI can create, search, edit, delete and attempt a question with the
+declared polish working. 459 tests pass in 27 files, lint is clean, and `npm run build`
+compiles with all four MCQ routes in the manifest. The whole UI was walked in real headless
+Chromium and the evidence — 22 screenshots and a transcript — is in
+`ai-workspace/phase4-walkthrough/`. The remote database has never been touched and nothing
+has been deployed.
+**Known caveat**: `npx tsc --noEmit` reports the same 14 pre-existing errors in Sprint 1's
+two auth route test files, 0 in anything Phases 1 to 4 created. `npm run build` passes
+because Next.js does not typecheck test files. See Troubleshooting for the decision needed.
+**Baseline preserved**: Sprint 1's 156 tests still pass, except for
+`src/app/mcq/page.test.tsx`, which Phase 4 rewrote because it asserted the placeholder copy
+this phase deletes. Phase 1 added 77, Phase 2 added 50, Phase 3 added 86, Phase 4 added 88
+net.
+**Dependencies added this phase**: `sonner` (approved, decision 6), `next-themes` (pulled in
+by shadcn's `sonner` template, not requested — see troubleshooting), and `playwright` as a
+devDependency (approved specifically so the walkthrough could produce real browser
+evidence).
+**Open decisions**: 1 and 3 are settled. 2 and 4 are closed by what shipped. 5 was built as
+specified and is confirmed by the walkthrough, which shows the edit form seeded with the
+correct choice pre-marked. 6 is settled — `sonner` was approved and installed. 8 is closed by
+what shipped and by the walkthrough. **Decision 7 (`esbuild`) blocks Phase 5** and is now
+more urgent: two `npm install` runs in this phase each destroyed the junction.
+**Next Steps**: Manikanta reads the walkthrough and reviews the Phase 4 diff, approves or
+amends the commit, then says "go Phase 5". Decision 7 needs an answer in the same pass, since
+Phase 5 runs `npm run preview` and cannot start without it.
 
 **Phase Status Summary**:
 
@@ -2297,6 +2612,7 @@ amends it, then says "go Phase 4". Decisions 6 and 8 are needed in the same pass
   built from the migrations, plus a real local D1 replay of every SQL shape)
 - Phase 3 — API Routes and Validation: COMPLETED (Aug 31, 2026 — 86 tests, plus a curl run
   covering every documented status code against real local D1)
-- Phase 4 — UI and Polish: PLANNED
+- Phase 4 — UI and Polish: COMPLETED (Aug 31, 2026 — 88 net tests, clean lint and build, plus
+  a 22-screenshot browser walkthrough in real headless Chromium)
 - Phase 5 — End-to-End Verification: PLANNED
 - Close-out — Remote Migration and Deployment: NOT STARTED, requires explicit instruction

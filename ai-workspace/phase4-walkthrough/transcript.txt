@@ -1,0 +1,120 @@
+
+=== 1. Skeleton rows while the list loads ===
+URL: http://localhost:3000/mcq
+Saw: 24 skeleton elements in the table while the fetch was in flight.
+Search box present yet? 0 (hidden until loaded)
+    [screenshot 01-list-loading-skeletons.png]
+
+=== 2. The list, loaded ===
+Heading: "Multiple choice questions"
+Rows: Largest planet, Capital of France
+Row "Capital of France" reads: Capital of France | Which city is the capital of France? | 3
+    [screenshot 02-list-loaded.png]
+
+=== 3. Search filters the rows already in memory ===
+Typed "planet". Rows now: Largest planet
+Extra GET /api/mcq requests caused by typing: 0
+    [screenshot 03-search-filtered.png]
+Typed "zzz" (matches nothing):
+  Message shown: "No questions match that search"
+  Empty-bank card shown instead? false
+    [screenshot 04-search-no-matches.png]
+
+=== 4. Create page, submitting an invalid form ===
+URL is now: http://localhost:3000/mcq/new
+Heading: "New question"
+Choice inputs on a fresh form: 2
+"Remove choice 1" disabled at two choices? true
+    [screenshot 05-create-empty-form.png]
+Clicked "Create question" with everything blank:
+  Inline errors: "Name is required", "Question text is required", "Choice text is required", "Choice text is required", "Mark exactly one choice as the correct answer"
+  Still on the create page? true
+    [screenshot 06-create-validation-errors.png]
+
+=== 5. The dynamic choice list, at its limits ===
+Clicked "Add choice" four times. Choices now: 6
+"Add choice" disabled? true
+Copy beside it: "A question can have at most six choices"
+    [screenshot 07-create-six-choices.png]
+Removed three, filled choice 3. Choices now: 3
+Submitted with no choice marked correct:
+  Error: "Mark exactly one choice as the correct answer"
+    [screenshot 08-create-no-correct-marked.png]
+
+=== 6. Creating the question ===
+  Toast said: "Question created"
+    [screenshot 09-create-toast.png]
+  URL is now: http://localhost:3000/mcq
+  New row reads: Ocean depth | Which is the deepest ocean trench? | 3
+    [screenshot 10-list-after-create.png]
+
+=== 7. Row actions in the dropdown ===
+Clicked the row's actions trigger. Menu items: Preview, Edit, Delete
+  Preview href: /mcq/207b8df1a45a607dbc2a6846f6dd867c/attempt
+  Edit href:    /mcq/207b8df1a45a607dbc2a6846f6dd867c/edit
+    [screenshot 11-row-actions-open.png]
+
+=== 8. Editing, reusing the same form ===
+URL is now: http://localhost:3000/mcq/207b8df1a45a607dbc2a6846f6dd867c/edit
+Heading: "Edit question"
+Name field seeded with: "Ocean depth"
+Choices seeded: Mariana Trench, Puerto Rico Trench, Tonga Trench
+Choice 1 pre-marked correct? true
+Submit button reads: "Save changes"
+    [screenshot 12-edit-seeded.png]
+  Toast said: "Question updated"
+    [screenshot 13-edit-toast.png]
+  Row now reads: Deepest ocean trench | Which is the deepest ocean trench? | 3
+    [screenshot 14-list-after-edit.png]
+
+=== 9. Attempting the question and getting it wrong ===
+URL is now: http://localhost:3000/mcq/207b8df1a45a607dbc2a6846f6dd867c/attempt
+Heading: "Deepest ocean trench"
+Choices offered, in order: Mariana Trench, Puerto Rico Trench, Tonga Trench
+Submit disabled before a choice is picked? true
+Any answer revealed yet? false
+    [screenshot 15-attempt-unanswered.png]
+Picked "Tonga Trench" (the wrong one) and clicked "Submit answer".
+  Result banner: "Not quite. The correct answer was “Mariana Trench”."
+  "Correct answer" badge sits beside: "Mariana Trench
+Correct answer"
+  Submit button still present? false
+  "Try again" offered? true
+    [screenshot 16-attempt-incorrect.png]
+
+=== 10. Trying again and getting it right ===
+Clicked "Try again". Result banner gone? true
+  Submit disabled again? true
+Picked "Mariana Trench". Result banner: "Correct"
+    [screenshot 17-attempt-correct.png]
+
+=== 11. Deleting, with the confirmation step ===
+Chose Delete. A dialog appeared rather than the row vanishing.
+  Dialog title: "Delete this question?"
+  Dialog body:  "“Deepest ocean trench” and its choices will be removed. This cannot be undone."
+  Buttons: "Cancel", "Delete question"
+    [screenshot 18-delete-confirm-dialog.png]
+Clicked "Cancel" first:
+  Row still there? true
+Reopened the dialog and clicked "Delete question":
+  Toast said: "Question deleted"
+    [screenshot 19-delete-toast.png]
+  Row gone without a reload? true
+  Rows remaining: Largest planet, Capital of France
+    [screenshot 20-list-after-delete.png]
+
+=== 12. A question id that does not exist ===
+    !! console error: Failed to load resource: the server responded with a status of 404 (Not Found)
+URL: http://localhost:3000/mcq/nope-not-a-real-id/attempt
+Shown: "Question not found It may have been deleted since this link was made. Back to questions"
+    [screenshot 21-attempt-not-found.png]
+
+=== 13. The empty state, with every question deleted ===
+Deleted the remaining 2 question(s), then reloaded http://localhost:3000/mcq
+Card reads: "No questions yet Write your first multiple-choice question and it will appear here. Create your first question"
+  Table rendered at all? false
+  Search box shown? false
+  Button href: /mcq/new
+    [screenshot 22-empty-state.png]
+
+=== walkthrough finished cleanly ===
