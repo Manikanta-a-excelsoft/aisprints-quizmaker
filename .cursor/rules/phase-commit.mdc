@@ -1,0 +1,52 @@
+---
+description: Commit and push one commit per implementation phase
+globs:
+alwaysApply: true
+---
+
+# Phase Commits
+
+Work is committed one phase at a time. A phase is committed only once it is genuinely
+finished, so the branch history reads as a sequence of complete, working steps.
+
+## When to commit a phase
+
+A phase is ready to commit when both of these are true:
+
+- The tests for that phase pass. Run `npm test` and confirm it is green.
+- The technical PRD in `ai-workspace/` has been updated with the phase status and details.
+
+Until both hold, the phase is not finished. Do not commit partial work in the middle of a
+phase, and never commit while its tests are failing.
+
+## Making the commit
+
+- Stage only the files belonging to that phase. Use explicit paths with `git add <path>`
+  rather than `git add -A` or `git add .`, which pick up unrelated work.
+- Commit with the phase number and a short description of what the phase delivered:
+
+```bash
+git commit -m "phase 3: add MCQ list and delete endpoints"
+```
+
+- Push to the remote branch immediately after committing so the branch on the remote
+  stays in step with local work.
+- One phase per commit. Do not combine two phases into a single commit, and do not split
+  one phase across several commits.
+
+## What belongs in the commit
+
+- PRD updates and D1 migrations that describe or support the phase go in the **same**
+  commit as the code they relate to. Do not commit them separately.
+- Anything not part of the phase stays out, including unrelated formatting or refactors.
+
+## Fixes after a phase is closed
+
+Once a phase is committed, that commit is closed. A later correction gets its own commit
+prefixed `fix:`, with the related phase named in the commit body:
+
+```bash
+git commit -m "fix: reject blank MCQ option text" -m "Follow-up to phase 3."
+```
+
+Do not amend or rewrite a phase commit that has already been pushed.
