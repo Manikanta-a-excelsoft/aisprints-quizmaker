@@ -5,15 +5,23 @@ agent conversation, so it describes only what is stable and true of the project.
 
 ## Project
 
-<!--
-Replace this section during Sprint 1 with a short description of what you are building:
-the problem, the primary user, and the current state. Two or three sentences.
-Keep it current. An out-of-date description here misleads every future conversation.
--->
+QuizMaker lets teachers build and maintain a bank of multiple-choice questions. Several
+teachers share one deployment, so every feature depends on each teacher having their own
+identity: the primary user is a teacher managing their own question bank.
 
-This is an unmodified AISprints starter. No application features have been built yet.
-The technical PRD in `ai-workspace/` is the source of truth for what is being built and
-for the current phase of work.
+Current state, after Sprint 1: teachers can register, log in, and log out. Accounts live in
+a Cloudflare D1 `users` table, passwords are stored as PBKDF2-SHA256 with a random per-user
+salt, and `/mcq` is a stub page that only confirms the flow works. Question creation does
+not exist yet.
+
+**Sprint 1 has no session management, deliberately.** Login verifies credentials and
+navigates; there is no cookie, token, session store, or middleware, so nothing downstream
+knows who is signed in and `/mcq` is reachable by typing the URL. Adding real sessions is
+the first task of the next sprint. Do not assume an authenticated user is available in any
+route or component.
+
+The technical PRD in `ai-workspace/` is the source of truth for what is being built and for
+the current phase of work.
 
 ## Stack
 
@@ -23,16 +31,21 @@ for the current phase of work.
 - **shadcn/ui** on Base UI, `base-nova` style, with Lucide icons
 - **TypeScript** in strict mode
 - **Wrangler** for Cloudflare configuration, secrets, and deployment
+- **Cloudflare D1** for storage, bound as `DB` (database `quizmaker-db`)
+- **Vitest** with Testing Library for tests; `zod` for input validation
 
-No database, authentication, testing framework, or AI SDK is installed yet. Do not
-write code that imports one without adding it first and telling the user.
+Passwords are hashed with Web Crypto PBKDF2-SHA256 in `src/lib/password.ts`. No auth
+library, session library, or AI SDK is installed. Do not write code that imports one
+without adding it first and telling the user.
 
 ## Layout
 
 ```
 src/app/            Routes, layouts, and global styles (App Router)
 src/components/ui/  shadcn/ui components (generated; avoid hand-editing)
+src/components/     Feature components (`auth/` holds the sign-in and sign-up forms)
 src/lib/            Shared utilities and services
+migrations/         D1 SQL migrations, with tests over the schema
 ai-workspace/       Technical PRDs and planning documents
 .cursor/rules/      File-scoped conventions
 .cursor/skills/     Task-specific guidance loaded on demand
@@ -48,6 +61,7 @@ Import through the `@/` alias, which maps to `src/`.
 | `npm run dev` | Local dev server on Node at `localhost:3000` |
 | `npm run preview` | Build and run on the local **Workers** runtime |
 | `npm run build` | Production build |
+| `npm test` | Vitest, single run |
 | `npm run lint` | ESLint |
 | `npm run deploy` | Build and deploy to Cloudflare |
 | `npm run cf-typegen` | Regenerate `cloudflare-env.d.ts` after changing bindings |
