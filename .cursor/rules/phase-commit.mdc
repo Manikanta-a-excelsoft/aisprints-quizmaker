@@ -1,5 +1,5 @@
 ---
-description: Commit and push one commit per implementation phase
+description: Propose one commit per implementation phase and wait for approval before staging, committing, or pushing
 globs:
 alwaysApply: true
 ---
@@ -9,28 +9,42 @@ alwaysApply: true
 Work is committed one phase at a time. A phase is committed only once it is genuinely
 finished, so the branch history reads as a sequence of complete, working steps.
 
-## When to commit a phase
+Nothing is staged, committed, or pushed without the user's approval in the chat.
 
-A phase is ready to commit when both of these are true:
+## When a phase is ready
+
+A phase is ready for a commit proposal when both of these are true:
 
 - The tests for that phase pass. Run `npm test` and confirm it is green.
 - The technical PRD in `ai-workspace/` has been updated with the phase status and details.
 
-Until both hold, the phase is not finished. Do not commit partial work in the middle of a
-phase, and never commit while its tests are failing.
+Until both hold, the phase is not finished. Do not propose a commit for partial work in the
+middle of a phase, and never commit while its tests are failing.
 
-## Making the commit
+## Propose, then wait
+
+When the phase's work is done and the PRD is updated, stop and show the exact commands you
+would run, in order, together with the commit message:
+
+```bash
+git add migrations/0002_create_mcq_tables.sql migrations/mcq-schema.test.ts ai-workspace/mcq-crud-technical-prd.md
+git commit -m "phase 1: add MCQ tables migration and schema tests"
+git push
+```
+
+Then wait. Do not run `git add`, `git commit`, or `git push` until the user says go in the
+chat. Approving one phase's commit is not approval of the next one.
+
+Once the user approves, run the commands as shown. Push after the user approves, in the same
+approved batch as the commit — never ahead of the approval, and not as a separate step
+decided on your own afterwards.
+
+## What the commit looks like
 
 - Stage only the files belonging to that phase. Use explicit paths with `git add <path>`
   rather than `git add -A` or `git add .`, which pick up unrelated work.
-- Commit with the phase number and a short description of what the phase delivered:
-
-```bash
-git commit -m "phase 3: add MCQ list and delete endpoints"
-```
-
-- Push to the remote branch immediately after committing so the branch on the remote
-  stays in step with local work.
+- Commit with the phase number and a short description of what the phase delivered, for
+  example `phase 3: add MCQ list and delete endpoints`.
 - One phase per commit. Do not combine two phases into a single commit, and do not split
   one phase across several commits.
 
@@ -48,5 +62,7 @@ prefixed `fix:`, with the related phase named in the commit body:
 ```bash
 git commit -m "fix: reject blank MCQ option text" -m "Follow-up to phase 3."
 ```
+
+A fix commit is proposed and approved the same way: show the commands, then wait for go.
 
 Do not amend or rewrite a phase commit that has already been pushed.
