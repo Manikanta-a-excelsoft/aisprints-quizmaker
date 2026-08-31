@@ -1,0 +1,368 @@
+﻿node.exe : (!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to 
+become the default in a future major version of Vite:
+At line:1 char:1
++ & "C:\backup_files\node-v24.19.0-win-x64\node-v24.19.0-win-x64/node.e ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: ((!) Your Vite c...ersion of Vite::String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+  - ESM syntax in a file loaded as CommonJS (vitest.config.ts:1:1). Use a `.mjs` extension or set `"type": "module"` 
+in the closest package.json
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+The plugin "vite-tsconfig-paths" is detected. Vite now supports tsconfig paths resolution natively via the 
+resolve.tsconfigPaths option. You can remove the plugin and set resolve.tsconfigPaths: true in your Vite config 
+instead.
+
+ RUN  v4.1.11 C:/aisprint-quizeMaker/aisprints-quizmaker
+
+ Γ£ô migrations/mcq-schema.test.ts (49 tests) 208ms
+ Γ£ô src/lib/services/mcq-service.test.ts (50 tests) 269ms
+stderr | src/app/api/mcq/[id]/route.test.ts > GET /api/mcq/[id] > returns 500 when the service fails
+Loading a question failed Error: D1_ERROR: database is locked
+    at C:/aisprint-quizeMaker/aisprints-quizmaker/src/app/api/mcq/[id]/route.test.ts:153:38
+    at file:///C:/aisprint-quizeMaker/aisprints-quizmaker/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11
+    at file:///C:/aisprint-quizeMaker/aisprints-quizmaker/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26
+    at file:///C:/aisprint-quizeMaker/aisprints-quizmaker/node_modules/@vitest/runner/dist/chunk-artifact.js:2326:20
+    at new Promise (<anonymous>)
+    at runWithCancel 
+(file:///C:/aisprint-quizeMaker/aisprints-quizmaker/node_modules/@vitest/runner/dist/chunk-artifact.js:2323:10)
+    at file:///C:/aisprint-quizeMaker/aisprints-quizmaker/node_modules/@vitest/runner/dist/chunk-artifact.js:2305:20
+    at new Promise (<anonymous>)
+    at runWithTimeout 
+(file:///C:/aisprint-quizeMaker/aisprints-quizmaker/node_modules/@vitest/runner/dist/chunk-artifact.js:2272:10)
+    at file:///C:/aisprint-quizeMaker/aisprints-quizmaker/node_modules/@vitest/runner/dist/chunk-artifact.js:2956:64
+
+stderr | src/app/api/mcq/[id]/route.test.ts > GET /api/mcq/[id] > does not leak the underlying error message to the 
+client
+Loading a question failed Error: D1_ERROR: database is locked
+    at C:/aisprint-quizeMaker/aisprints-quizmaker/src/app/api/mcq/[id]/route.test.ts:164:38
+    at file:///C:/aisprint-quizeMaker/aisprints-quizmaker/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11
+    at file:///C:/aisprint-quizeMaker/aisprints-quizmaker/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26
+    at file:///C:/aisprint-quizeMaker/aisprints-quizmaker/node_modules/@vitest/runner/dist/chunk-artifact.js:2326:20
+    at new Promise (<anonymous>)
+    at runWithCancel 
+(file:///C:/aisprint-quizeMaker/aisprints-quizmaker/node_modules/@vitest/runner/dist/chunk-artifact.js:2323:10)
+    at file:///C:/aisprint-quizeMaker/aisprints-quizmaker/node_modules/@vitest/runner/dist/chunk-artifact.js:2305:20
+    at new Promise (<anonymous>)
+    at runWithTimeout 
+(file:///C:/aisprint-quizeMaker/aisprints-quizmaker/node_modules/@vitest/runner/dist/chunk-artifact.js:2272:10)
+    at file:///C:/aisprint-quizeMaker/aisprints-quizmaker/node_modules/@vitest/runner/dist/chunk-artifact.js:2956:64
+
+stderr | src/app/api/mcq/[id]/route.test.ts > PUT /api/mcq/[id] > returns 500 when the service fails unexpectedly
+Updating a question failed Error: D1_ERROR: database is locked
+    at C:/aisprint-quizeMaker/aisprints-quizmaker/src/app/api/mcq/[id]/route.test.ts:276:36
+    at file:///C:/aisprint-quizeMaker/aisprints-quizmaker/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11
+    at file:///C:/aisprint-quizeMaker/aisprints-quizmaker/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26
+    at file:///C:/aisprint-quizeMaker/aisprints-quizmaker/node_modules/@vitest/runner/dist/chunk-artifact.js:2326:20
+    at new Promise (<anonymous>)
+    at runWithCancel 
+(file:///C:/aisprint-quizeMaker/aisprints-quizmaker/node_modules/@vitest/runner/dist/chunk-artifact.js:2323:10)
+    at file:///C:/aisprint-quizeMaker/aisprints-quizmaker/node_modules/@vitest/runner/dist/chunk-artifact.js:2305:20
+    at new Promise (<anonymous>)
+    at runWithTimeout 
+(file:///C:/aisprint-quizeMaker/aisprints-quizmaker/node_modules/@vitest/runner/dist/chunk-artifact.js:2272:10)
+    at file:///C:/aisprint-quizeMaker/aisprints-quizmaker/node_modules/@vitest/runner/dist/chunk-artifact.js:2956:64
+
+ Γ£ô src/app/api/mcq/[id]/route.test.ts (23 tests) 113ms
+stderr | src/app/api/mcq/[id]/route.test.ts > DELETE /api/mcq/[id] > returns 500 when the service fails
+Deleting a question failed Error: D1_ERROR: database is locked
+    at C:/aisprint-quizeMaker/aisprints-quizmaker/src/app/api/mcq/[id]/route.test.ts:329:36
+    at file:///C:/aisprint-quizeMaker/aisprints-quizmaker/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11
+    at file:///C:/aisprint-quizeMaker/aisprints-quizmaker/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26
+    at file:///C:/aisprint-quizeMaker/aisprints-quizmaker/node_modules/@vitest/runner/dist/chunk-artifact.js:2326:20
+    at new Promise (<anonymous>)
+    at runWithCancel 
+(file:///C:/aisprint-quizeMaker/aisprints-quizmaker/node_modules/@vitest/runner/dist/chunk-artifact.js:2323:10)
+    at file:///C:/aisprint-quizeMaker/aisprints-quizmaker/node_modules/@vitest/runner/dist/chunk-artifact.js:2305:20
+    at new Promise (<anonymous>)
+    at runWithTimeout 
+(file:///C:/aisprint-quizeMaker/aisprints-quizmaker/node_modules/@vitest/runner/dist/chunk-artifact.js:2272:10)
+    at file:///C:/aisprint-quizeMaker/aisprints-quizmaker/node_modules/@vitest/runner/dist/chunk-artifact.js:2956:64
+
+stderr | src/app/api/mcq/[id]/route.test.ts > DELETE /api/mcq/[id] > does not leak the underlying error message to the 
+client
+Deleting a question failed Error: D1_ERROR: database is locked
+    at C:/aisprint-quizeMaker/aisprints-quizmaker/src/app/api/mcq/[id]/route.test.ts:340:36
+    at file:///C:/aisprint-quizeMaker/aisprints-quizmaker/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11
+    at file:///C:/aisprint-quizeMaker/aisprints-quizmaker/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26
+    at file:///C:/aisprint-quizeMaker/aisprints-quizmaker/node_modules/@vitest/runner/dist/chunk-artifact.js:2326:20
+    at new Promise (<anonymous>)
+    at runWithCancel 
+(file:///C:/aisprint-quizeMaker/aisprints-quizmaker/node_modules/@vitest/runner/dist/chunk-artifact.js:2323:10)
+    at file:///C:/aisprint-quizeMaker/aisprints-quizmaker/node_modules/@vitest/runner/dist/chunk-artifact.js:2305:20
+    at new Promise (<anonymous>)
+    at runWithTimeout 
+(file:///C:/aisprint-quizeMaker/aisprints-quizmaker/node_modules/@vitest/runner/dist/chunk-artifact.js:2272:10)
+    at file:///C:/aisprint-quizeMaker/aisprints-quizmaker/node_modules/@vitest/runner/dist/chunk-artifact.js:2956:64
+
+ Γ£ô src/lib/password.test.ts (20 tests) 706ms
+stderr | src/app/api/auth/login/route.test.ts > POST /api/auth/login > returns 500 when the lookup fails unexpectedly
+Login failed Error: D1_ERROR: database is locked
+    at C:/aisprint-quizeMaker/aisprints-quizmaker/src/app/api/auth/login/route.test.ts:149:40
+    at file:///C:/aisprint-quizeMaker/aisprints-quizmaker/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11
+    at file:///C:/aisprint-quizeMaker/aisprints-quizmaker/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26
+    at file:///C:/aisprint-quizeMaker/aisprints-quizmaker/node_modules/@vitest/runner/dist/chunk-artifact.js:2326:20
+    at new Promise (<anonymous>)
+    at runWithCancel 
+(file:///C:/aisprint-quizeMaker/aisprints-quizmaker/node_modules/@vitest/runner/dist/chunk-artifact.js:2323:10)
+    at file:///C:/aisprint-quizeMaker/aisprints-quizmaker/node_modules/@vitest/runner/dist/chunk-artifact.js:2305:20
+    at new Promise (<anonymous>)
+    at runWithTimeout 
+(file:///C:/aisprint-quizeMaker/aisprints-quizmaker/node_modules/@vitest/runner/dist/chunk-artifact.js:2272:10)
+    at file:///C:/aisprint-quizeMaker/aisprints-quizmaker/node_modules/@vitest/runner/dist/chunk-artifact.js:2956:64
+
+stderr | src/app/api/auth/register/route.test.ts > POST /api/auth/register > returns 500 when the service fails 
+unexpectedly
+Registration failed Error: D1_ERROR: database is locked
+    at C:/aisprint-quizeMaker/aisprints-quizmaker/src/app/api/auth/register/route.test.ts:203:32
+    at file:///C:/aisprint-quizeMaker/aisprints-quizmaker/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11
+    at file:///C:/aisprint-quizeMaker/aisprints-quizmaker/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26
+    at file:///C:/aisprint-quizeMaker/aisprints-quizmaker/node_modules/@vitest/runner/dist/chunk-artifact.js:2326:20
+    at new Promise (<anonymous>)
+    at runWithCancel 
+(file:///C:/aisprint-quizeMaker/aisprints-quizmaker/node_modules/@vitest/runner/dist/chunk-artifact.js:2323:10)
+    at file:///C:/aisprint-quizeMaker/aisprints-quizmaker/node_modules/@vitest/runner/dist/chunk-artifact.js:2305:20
+    at new Promise (<anonymous>)
+    at runWithTimeout 
+(file:///C:/aisprint-quizeMaker/aisprints-quizmaker/node_modules/@vitest/runner/dist/chunk-artifact.js:2272:10)
+    at file:///C:/aisprint-quizeMaker/aisprints-quizmaker/node_modules/@vitest/runner/dist/chunk-artifact.js:2956:64
+
+ Γ£ô src/app/api/auth/login/route.test.ts (12 tests) 521ms
+stderr | src/app/api/auth/register/route.test.ts > POST /api/auth/register > does not leak the underlying error 
+message to the client
+Registration failed Error: D1_ERROR: database is locked
+    at C:/aisprint-quizeMaker/aisprints-quizmaker/src/app/api/auth/register/route.test.ts:214:32
+    at file:///C:/aisprint-quizeMaker/aisprints-quizmaker/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11
+    at file:///C:/aisprint-quizeMaker/aisprints-quizmaker/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26
+    at file:///C:/aisprint-quizeMaker/aisprints-quizmaker/node_modules/@vitest/runner/dist/chunk-artifact.js:2326:20
+    at new Promise (<anonymous>)
+    at runWithCancel 
+(file:///C:/aisprint-quizeMaker/aisprints-quizmaker/node_modules/@vitest/runner/dist/chunk-artifact.js:2323:10)
+    at file:///C:/aisprint-quizeMaker/aisprints-quizmaker/node_modules/@vitest/runner/dist/chunk-artifact.js:2305:20
+    at new Promise (<anonymous>)
+    at runWithTimeout 
+(file:///C:/aisprint-quizeMaker/aisprints-quizmaker/node_modules/@vitest/runner/dist/chunk-artifact.js:2272:10)
+    at file:///C:/aisprint-quizeMaker/aisprints-quizmaker/node_modules/@vitest/runner/dist/chunk-artifact.js:2956:64
+
+ Γ£ô src/app/api/auth/register/route.test.ts (17 tests) 523ms
+ Γ£ô src/lib/mcq-client.test.ts (24 tests) 93ms
+stderr | src/app/api/mcq/[id]/attempts/route.test.ts > POST /api/mcq/[id]/attempts > returns 500 when the service 
+fails unexpectedly
+Recording an attempt failed Error: D1_ERROR: database is locked
+    at C:/aisprint-quizeMaker/aisprints-quizmaker/src/app/api/mcq/[id]/attempts/route.test.ts:183:35
+    at file:///C:/aisprint-quizeMaker/aisprints-quizmaker/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11
+    at file:///C:/aisprint-quizeMaker/aisprints-quizmaker/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26
+    at file:///C:/aisprint-quizeMaker/aisprints-quizmaker/node_modules/@vitest/runner/dist/chunk-artifact.js:2326:20
+    at new Promise (<anonymous>)
+    at runWithCancel 
+(file:///C:/aisprint-quizeMaker/aisprints-quizmaker/node_modules/@vitest/runner/dist/chunk-artifact.js:2323:10)
+    at file:///C:/aisprint-quizeMaker/aisprints-quizmaker/node_modules/@vitest/runner/dist/chunk-artifact.js:2305:20
+    at new Promise (<anonymous>)
+    at runWithTimeout 
+(file:///C:/aisprint-quizeMaker/aisprints-quizmaker/node_modules/@vitest/runner/dist/chunk-artifact.js:2272:10)
+    at file:///C:/aisprint-quizeMaker/aisprints-quizmaker/node_modules/@vitest/runner/dist/chunk-artifact.js:2956:64
+
+stderr | src/app/api/mcq/[id]/attempts/route.test.ts > POST /api/mcq/[id]/attempts > does not leak the underlying 
+error message to the client
+Recording an attempt failed Error: D1_ERROR: database is locked
+    at C:/aisprint-quizeMaker/aisprints-quizmaker/src/app/api/mcq/[id]/attempts/route.test.ts:194:35
+    at file:///C:/aisprint-quizeMaker/aisprints-quizmaker/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11
+    at file:///C:/aisprint-quizeMaker/aisprints-quizmaker/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26
+    at file:///C:/aisprint-quizeMaker/aisprints-quizmaker/node_modules/@vitest/runner/dist/chunk-artifact.js:2326:20
+    at new Promise (<anonymous>)
+    at runWithCancel 
+(file:///C:/aisprint-quizeMaker/aisprints-quizmaker/node_modules/@vitest/runner/dist/chunk-artifact.js:2323:10)
+    at file:///C:/aisprint-quizeMaker/aisprints-quizmaker/node_modules/@vitest/runner/dist/chunk-artifact.js:2305:20
+    at new Promise (<anonymous>)
+    at runWithTimeout 
+(file:///C:/aisprint-quizeMaker/aisprints-quizmaker/node_modules/@vitest/runner/dist/chunk-artifact.js:2272:10)
+    at file:///C:/aisprint-quizeMaker/aisprints-quizmaker/node_modules/@vitest/runner/dist/chunk-artifact.js:2956:64
+
+ Γ£ô src/app/api/mcq/[id]/attempts/route.test.ts (13 tests) 86ms
+stderr | src/app/api/mcq/route.test.ts > GET /api/mcq > returns 500 when the service fails
+Listing questions failed Error: D1_ERROR: database is locked
+    at C:/aisprint-quizeMaker/aisprints-quizmaker/src/app/api/mcq/route.test.ts:109:35
+    at file:///C:/aisprint-quizeMaker/aisprints-quizmaker/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11
+    at file:///C:/aisprint-quizeMaker/aisprints-quizmaker/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26
+    at file:///C:/aisprint-quizeMaker/aisprints-quizmaker/node_modules/@vitest/runner/dist/chunk-artifact.js:2326:20
+    at new Promise (<anonymous>)
+    at runWithCancel 
+(file:///C:/aisprint-quizeMaker/aisprints-quizmaker/node_modules/@vitest/runner/dist/chunk-artifact.js:2323:10)
+    at file:///C:/aisprint-quizeMaker/aisprints-quizmaker/node_modules/@vitest/runner/dist/chunk-artifact.js:2305:20
+    at new Promise (<anonymous>)
+    at runWithTimeout 
+(file:///C:/aisprint-quizeMaker/aisprints-quizmaker/node_modules/@vitest/runner/dist/chunk-artifact.js:2272:10)
+    at file:///C:/aisprint-quizeMaker/aisprints-quizmaker/node_modules/@vitest/runner/dist/chunk-artifact.js:2956:64
+
+stderr | src/app/api/mcq/route.test.ts > GET /api/mcq > does not leak the underlying error message to the client
+Listing questions failed Error: D1_ERROR: database is locked
+    at C:/aisprint-quizeMaker/aisprints-quizmaker/src/app/api/mcq/route.test.ts:120:35
+    at file:///C:/aisprint-quizeMaker/aisprints-quizmaker/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11
+    at file:///C:/aisprint-quizeMaker/aisprints-quizmaker/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26
+    at file:///C:/aisprint-quizeMaker/aisprints-quizmaker/node_modules/@vitest/runner/dist/chunk-artifact.js:2326:20
+    at new Promise (<anonymous>)
+    at runWithCancel 
+(file:///C:/aisprint-quizeMaker/aisprints-quizmaker/node_modules/@vitest/runner/dist/chunk-artifact.js:2323:10)
+    at file:///C:/aisprint-quizeMaker/aisprints-quizmaker/node_modules/@vitest/runner/dist/chunk-artifact.js:2305:20
+    at new Promise (<anonymous>)
+    at runWithTimeout 
+(file:///C:/aisprint-quizeMaker/aisprints-quizmaker/node_modules/@vitest/runner/dist/chunk-artifact.js:2272:10)
+    at file:///C:/aisprint-quizeMaker/aisprints-quizmaker/node_modules/@vitest/runner/dist/chunk-artifact.js:2956:64
+
+stderr | src/app/api/mcq/route.test.ts > POST /api/mcq > returns 500 when the service fails unexpectedly
+Creating a question failed Error: D1_ERROR: database is locked
+    at C:/aisprint-quizeMaker/aisprints-quizmaker/src/app/api/mcq/route.test.ts:314:36
+    at file:///C:/aisprint-quizeMaker/aisprints-quizmaker/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11
+    at file:///C:/aisprint-quizeMaker/aisprints-quizmaker/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26
+    at file:///C:/aisprint-quizeMaker/aisprints-quizmaker/node_modules/@vitest/runner/dist/chunk-artifact.js:2326:20
+    at new Promise (<anonymous>)
+    at runWithCancel 
+(file:///C:/aisprint-quizeMaker/aisprints-quizmaker/node_modules/@vitest/runner/dist/chunk-artifact.js:2323:10)
+    at file:///C:/aisprint-quizeMaker/aisprints-quizmaker/node_modules/@vitest/runner/dist/chunk-artifact.js:2305:20
+    at new Promise (<anonymous>)
+    at runWithTimeout 
+(file:///C:/aisprint-quizeMaker/aisprints-quizmaker/node_modules/@vitest/runner/dist/chunk-artifact.js:2272:10)
+    at file:///C:/aisprint-quizeMaker/aisprints-quizmaker/node_modules/@vitest/runner/dist/chunk-artifact.js:2956:64
+
+stderr | src/app/api/mcq/route.test.ts > POST /api/mcq > does not leak the underlying error message to the client
+Creating a question failed Error: D1_ERROR: database is locked
+    at C:/aisprint-quizeMaker/aisprints-quizmaker/src/app/api/mcq/route.test.ts:325:36
+    at file:///C:/aisprint-quizeMaker/aisprints-quizmaker/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11
+    at file:///C:/aisprint-quizeMaker/aisprints-quizmaker/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26
+    at file:///C:/aisprint-quizeMaker/aisprints-quizmaker/node_modules/@vitest/runner/dist/chunk-artifact.js:2326:20
+    at new Promise (<anonymous>)
+    at runWithCancel 
+(file:///C:/aisprint-quizeMaker/aisprints-quizmaker/node_modules/@vitest/runner/dist/chunk-artifact.js:2323:10)
+    at file:///C:/aisprint-quizeMaker/aisprints-quizmaker/node_modules/@vitest/runner/dist/chunk-artifact.js:2305:20
+    at new Promise (<anonymous>)
+    at runWithTimeout 
+(file:///C:/aisprint-quizeMaker/aisprints-quizmaker/node_modules/@vitest/runner/dist/chunk-artifact.js:2272:10)
+    at file:///C:/aisprint-quizeMaker/aisprints-quizmaker/node_modules/@vitest/runner/dist/chunk-artifact.js:2956:64
+
+ Γ£ô src/app/api/mcq/route.test.ts (19 tests) 116ms
+ Γ£ô src/lib/auth-client.test.ts (7 tests) 112ms
+ Γ£ô migrations/migrations.test.ts (16 tests) 52ms
+ Γ£ô migrations/mcq-migrations.test.ts (28 tests) 66ms
+ Γ£ô migrations/schema.test.ts (17 tests) 53ms
+ Γ£ô src/app/api/auth/logout/route.test.ts (2 tests) 52ms
+ Γ£ô src/lib/services/user-service.test.ts (29 tests) 55ms
+ Γ£ô src/app/page.test.ts (1 test) 11ms
+ Γ£ô src/lib/validation/mcq.test.ts (31 tests) 29ms
+ Γ£ô src/lib/validation/auth.test.ts (7 tests) 17ms
+ Γ£ô src/components/auth/logout-button.test.tsx (3 tests) 418ms
+stderr | src/app/mcq/page.test.tsx > MCQ list page > shows the question bank heading
+An update to QuestionList inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at 
+https://react.dev/link/wrap-tests-with-act
+An update to QuestionList inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at 
+https://react.dev/link/wrap-tests-with-act
+
+stderr | src/app/mcq/page.test.tsx > MCQ list page > offers a way to create a question
+An update to QuestionList inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at 
+https://react.dev/link/wrap-tests-with-act
+An update to QuestionList inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at 
+https://react.dev/link/wrap-tests-with-act
+
+stderr | src/app/mcq/page.test.tsx > MCQ list page > offers the logout control
+An update to QuestionList inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at 
+https://react.dev/link/wrap-tests-with-act
+An update to QuestionList inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at 
+https://react.dev/link/wrap-tests-with-act
+
+ Γ£ô src/components/mcq/question-loader.test.tsx (7 tests) 668ms
+ Γ£ô src/app/mcq/page.test.tsx (5 tests) 530ms
+ Γ£ô src/components/mcq/question-row-actions.test.tsx (8 tests) 1385ms
+ Γ£ô src/components/mcq/attempt-form.test.tsx (13 tests) 2171ms
+     Γ£ô shows the question and every choice in position order  420ms
+ Γ£ô src/components/mcq/question-list.test.tsx (14 tests) 1770ms
+     Γ£ô filters the rows already loaded, without another request  323ms
+     Γ£ô says there are no matches rather than showing the empty-bank card  361ms
+ Γ£ô src/components/auth/login-form.test.tsx (9 tests) 2874ms
+     Γ£ô shows a heading, both credential fields and a submit button  351ms
+     Γ£ô sends the credentials to the login endpoint  435ms
+     Γ£ô navigates to the quiz page after a successful sign in  467ms
+     Γ£ô shows the credential error and stays put when the server returns 401  425ms
+     Γ£ô never echoes the submitted password back into the page text  457ms
+     Γ£ô disables the submit button while the request is in flight  535ms
+ Γ£ô src/components/mcq/question-form.test.tsx (22 tests) 11022ms
+     Γ£ô shows a heading, both text fields and a submit button  476ms
+     Γ£ô removes a choice when asked, keeping the remaining text  628ms
+     Γ£ô will not let the choice list grow past six, and says why  347ms
+     Γ£ô refuses to submit when no choice is marked correct  879ms
+     Γ£ô puts a blank choice's error against that choice's own row  660ms
+     Γ£ô posts to the collection endpoint and sends the array order as the order  1389ms
+     Γ£ô raises a success toast and returns to the list  1353ms
+     Γ£ô shows a server validation error against the right field  1338ms
+     Γ£ô shows a form-level message when the server fails without field detail  1314ms
+     Γ£ô does not raise a success toast when the save failed  1306ms
+     Γ£ô puts to the question's own URL and sends no choice ids  352ms
+ Γ£ô src/components/auth/register-form.test.tsx (13 tests) 14057ms
+     Γ£ô shows a heading, every registration field and a submit button  433ms
+     Γ£ô applies the same username, email and password rules as the API  967ms
+     Γ£ô posts the trimmed values to the register endpoint  1787ms
+     Γ£ô keeps the confirmation out of the request body  1528ms
+     Γ£ô refuses to submit when the two passwords differ  1522ms
+     Γ£ô submits once the mismatch is corrected  1730ms
+     Γ£ô sends the user to the quiz page after a successful registration  1528ms
+     Γ£ô shows the duplicate username message from the server  1512ms
+     Γ£ô shows a server field error against the matching field  1516ms
+     Γ£ô never echoes the submitted password back into the page text  1291ms
+
+ Test Files  27 passed (27)
+      Tests  459 passed (459)
+   Start at  23:12:42
+   Duration  18.80s (transform 2.28s, setup 0ms, import 16.67s, tests 37.98s, environment 25.03s)
+

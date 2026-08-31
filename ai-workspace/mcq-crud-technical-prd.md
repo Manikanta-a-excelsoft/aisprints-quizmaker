@@ -1194,7 +1194,7 @@ troubleshooting: an "edit shows the create toast" reading that turned out to be 
 toast still on screen, and a "delete does nothing" reading caused by a broken edit to the
 harness.
 
-### Phase 5: End-to-End Verification - PLANNED
+### Phase 5: End-to-End Verification - COMPLETED
 
 **Objective**: Prove the sprint works on the runtime it will actually deploy to, rather than
 assert it from the Node dev server.
@@ -1230,6 +1230,122 @@ assert it from the Node dev server.
 
 **Explicitly not in this phase**: no deploy, no `--remote` migration, no remote database
 access. Those are the close-out step below.
+
+#### What was done
+
+Everything above, on `workerd` rather than `next dev`. Evidence is in
+`ai-workspace/phase5-verification/`: `test-run.txt`, `build.txt`, `preview.log`,
+`transcript-main.txt`, `transcript-delete.txt`, `walkthrough.mjs`, and 21 screenshots.
+
+- **Tests**: `npm test` → **27 files, 459 tests, all passing**, 18.8s. Full output in
+  `test-run.txt`. The stderr in that file is expected: it is the deliberate
+  `D1_ERROR: database is locked` fixtures from the route tests that assert nothing leaks to
+  the client, plus React `act()` warnings from `src/app/mcq/page.test.tsx` (see
+  Troubleshooting — reported, not fixed).
+- **Build**: `npm run build` → compiled in 10.6s, TypeScript clean, 11 static pages, and all
+  four MCQ routes in the manifest (`/api/mcq`, `/api/mcq/[id]`, `/api/mcq/[id]/attempts`,
+  `/mcq`, `/mcq/new`, `/mcq/[id]/attempt`, `/mcq/[id]/edit`). Output in `build.txt`.
+- **Lint**: `npx eslint src migrations` → **exit 0, clean**. Bare `npm run lint` now reports
+  7684 problems, every one of them inside two generated bundles under `.wrangler\tmp\` that
+  `npm run preview` writes. `eslint.config.mjs` ignores `.open-next/**` but not
+  `.wrangler/**`. Reported to Manikanta, not fixed — see Troubleshooting.
+- **Preview**: `npm run preview` started cleanly and served on
+  `http://127.0.0.1:8787`, binding `env.DB (quizmaker-db)` as a **local** D1. The `esbuild`
+  junction survived, because no `npm install` ran this phase. `preview.log` has the whole
+  start-up, including the two OpenNext "not fully compatible with Windows" warnings and one
+  third-party `Duplicate key "options"` esbuild warning from `@base-ui/react`. Neither
+  affected the run.
+
+#### Browser walkthrough on the Workers runtime
+
+Driven by `ai-workspace/phase5-verification/walkthrough.mjs` in real headless Chromium
+against port 8787. It is split into two stages, `main` and `delete`, because miniflare holds
+the local D1 sqlite file while the worker is up, so the attempt rows had to be read at a
+point where the browser was idle. That is also why the screenshots jump from `15` to `31`:
+the two stages number their own shots.
+
+The bank started with the two questions Phase 4 left behind, deliberately, so the delete step
+could prove it removed one row and not the table.
+
+| Step | Screenshot | What it proves |
+|------|-----------|----------------|
+| 1. List on the worker | `01-list-on-worker.png` | `/mcq` renders the table from a real D1 read on workerd |
+| 2. Empty form | `02-empty-form-errors.png` | Five inline messages at once, no navigation, no toast |
+| 3. Six choices | `03-six-choices-capped.png` | "Add choice" disables exactly at six, with the reason shown |
+| 4. Over every limit | `04-over-character-limits.png` | 101 / 1001 / 501 characters each rejected with their own message |
+| 5. On every limit | `05-at-character-limits-accepted.png` | 100 / 1000 / 500 accepted and stored at full length |
+| 6. Create, three choices | `06-create-three-choices.png` | The form filled, choice 1 marked correct |
+| 7. Create toast | `07-create-toast.png` | "Question created" |
+| 8. In the list | `08-list-after-create.png` | The new row, with its choice count of 3 |
+| 9. Search | `09-search-filtered.png` | Filtered to one row with **0** extra `GET /api/mcq` and no query param |
+| 10. Attempt page | `10-attempt-unanswered.png` | Choices in position order, submit disabled, answer not revealed |
+| 11. Wrong answer | `11-attempt-incorrect.png` | "Not quite. The correct answer was “Carbon dioxide and water”." |
+| 12. Right answer | `12-attempt-correct.png` | "Correct", after "Try again" cleared the first result |
+| 13. Edit seeded | `13-edit-seeded.png` | Name, all three choices, and the correct mark all pre-filled |
+| 14. Edit toast | `14-edit-toast.png` | "Question updated" |
+| 15. Edit took effect | `15-attempt-after-edit.png` | The old correct choice now reads as wrong |
+| 14'. Delete dialog | `31-delete-confirm-dialog.png` | Dialog quotes the question and warns it cannot be undone |
+| Delete toast | `32-delete-toast.png` | "Question deleted" |
+| After delete | `33-list-after-delete.png` | The row gone without a reload, the other two intact |
+| After reload | `34-list-after-reload.png` | Still gone after a hard reload; API returns 404 |
+| 15'. Bogus id, attempt | `35-bogus-id-attempt.png` | "Question not found" card, not a crash |
+| Bogus id, edit | `36-bogus-id-edit.png` | Same card on the edit route |
+
+#### Local D1, before and after the delete
+
+Read with `npx wrangler d1 execute quizmaker-db --local` while the worker was running, which
+works fine — the earlier workerd crash of Sprint 1 did not recur.
+
+Baseline before the run: 2 questions / 5 choices / 4 attempts.
+
+**Attempts persisted** (`question_id = 22d9de730cec00bef3c52cb1f83492c8`), three submitted and
+three rows written:
+
+| `is_correct` | `choice_id` | `user_id` | Which submit |
+|---|---|---|---|
+| 0 | `NULL` | `NULL` | the wrong answer |
+| 1 | `NULL` | `NULL` | the retry, correct |
+| 0 | `b44b2c91…` | `NULL` | after the edit moved the correct mark |
+
+The first two show `choice_id` null on purpose. The edit replaced the choice set, and
+`mcq_attempts.choice_id` is `ON DELETE SET NULL`, so the rows survived with their verdicts
+intact rather than being cascaded away. This is the designed trade-off and it is now recorded
+accurately under Known Limitations, which previously described it as rare.
+
+**The choice set after the edit** confirmed "Nitrogen and sunlight" as the only
+`is_correct = 1`, at position 2, and `created_by` null on the question.
+
+**Cascade after the delete**: `question_rows 0 / choice_rows 0 / attempt_rows 0` for that id.
+Totals went `2 / 5 / 4` before the run → `3 / 8 / 7` with the question in place →
+`2 / 5 / 4` after the delete. Exactly the +1 question, +3 choices and +3 attempts the run
+added were removed, and nothing else was.
+
+**Orphan and integrity sweep across the whole bank**: `orphan_choices 0`,
+`orphan_attempts 0`, `attempts_with_user 0`, `questions_with_creator 0`,
+`bad_choice_flags 0`, `bad_attempt_flags 0`. The `HAVING choices < 2 OR correct_marks <> 1`
+query returned **no rows**, so every question in the database has at least two choices and
+exactly one correct one.
+
+#### API edge cases on the worker
+
+`curl.exe` against port 8787, bodies from files:
+
+| Request | Status | Body |
+|---|---|---|
+| `GET /api/mcq/does-not-exist-1234` | 404 | `{"error":"Question not found"}` |
+| `PUT /api/mcq/does-not-exist-1234` with a valid body | 404 | `{"error":"Question not found"}` |
+| `DELETE /api/mcq/does-not-exist-1234` | 404 | `{"error":"Question not found"}` |
+| `POST /api/mcq/does-not-exist-1234/attempts` | 404 | `{"error":"Question not found"}` |
+| `POST /api/mcq` with `{"name":` | 400 | `{"error":"Validation failed","fields":{"body":"Expected a JSON object"}}` |
+
+#### Scope check
+
+`rg "cookies\(\)|Set-Cookie|getSession|createSession|jwt|middleware" src/` returns nothing
+outside tests, there is no `middleware.ts` anywhere in the repository, and
+`mcq-service.ts` still passes a literal null for `created_by` with `userId` defaulted to
+null. Confirmed in the data too: `attempts_with_user 0`, `questions_with_creator 0`.
+
+Nothing was deployed. No `--remote` command was run at any point in Phases 1 to 5.
 
 ### Close-out: Remote Migration and Deployment - NOT STARTED, RUNS ONLY ON MANIKANTA'S EXPLICIT INSTRUCTION
 
@@ -1702,11 +1818,22 @@ Recorded deliberately so they are not mistaken for bugs.
 - **An attempt is a log line, not a score.** Attempting the same question five times writes
   five rows. Nothing reads them back this sprint, and nothing deduplicates them.
 
-- **Editing a question can outdate its attempt history.** If an edit deletes a choice
-  someone had already chosen, that attempt keeps its `is_correct` and timestamp but its
-  `choice_id` becomes null, so which answer was picked is no longer recoverable. The diff
-  based update keeps this rare — an ordinary edit preserves choice ids — but it is real. Open
-  decision 4 offers a text snapshot if Manikanta wants it closed now.
+- **Every edit outdates that question's attempt history.** This entry previously said a diff
+  based update kept the problem rare. That is wrong, and Phase 5 proved it: the shipped
+  update replaces the whole choice set, so *any* successful `PUT` deletes every existing
+  choice row and inserts new ones with new ids. `mcq_attempts.choice_id` is
+  `ON DELETE SET NULL`, so the attempt rows survive with their `is_correct` and timestamp
+  intact — nothing is cascaded away — but `choice_id` goes null and which answer the person
+  actually picked is no longer recoverable.
+
+  Measured in Phase 5: two attempts recorded before an edit, both still present afterwards
+  with `is_correct` 0 and 1 preserved, both with `choice_id` null. The third attempt, made
+  after the edit, still points at a live choice.
+
+  This is a deliberate trade-off, not an accident. `SET NULL` was chosen over `CASCADE`
+  precisely so an ordinary edit cannot silently destroy attempt history. Closing the gap
+  properly means snapshotting the chosen text onto the attempt row, which is open decision 4
+  and is not built.
 
 - **The correct answer is not really hidden from a determined user.** The default `GET`
   omits `isCorrect`, but `?include=answers` is a query parameter anyone can add, because
@@ -1715,6 +1842,27 @@ Recorded deliberately so they are not mistaken for bugs.
 
 - **Delete is permanent.** No soft delete, no undo, no trash. The confirmation dialog is
   the only safety net, which is why it is required rather than optional.
+
+- **`npm run lint` is not usable after `npm run preview` on this checkout.**
+  `eslint.config.mjs` ignores `.open-next/**` but not `.wrangler/**`, and `wrangler dev`
+  writes generated worker bundles into `.wrangler\tmp\`. After a preview run, the bare lint
+  script reports 7684 problems from two machine-generated files. `npx eslint src migrations`
+  is clean, and that is the reading this sprint's lint claims rest on. The one-line config
+  fix is described in Troubleshooting and was **not** applied, because it is outside Phase 5's
+  brief and needs Manikanta's approval.
+
+- **Verification was done on the local Workers runtime, not on Cloudflare.** `npm run preview`
+  runs the same `workerd` and the same OpenNext bundle that a deploy would, which is why it is
+  a much stronger signal than `next dev`. It is still not the live edge: the D1 is the local
+  sqlite file, not the remote database, and no cold start, region, or real network was
+  exercised. The close-out step re-walks the flow on the live URL, and until it runs, nothing
+  in this document claims the deployed app has been tested.
+
+- **The Windows toolchain has two standing warts.** OpenNext prints
+  "not fully compatible with Windows" on every build and recommends WSL, and the `esbuild`
+  entry in `node_modules` is a junction into `@opennextjs/aws/node_modules/esbuild` that any
+  `npm install` destroys. Preview worked in Phase 5 only because no install ran during it.
+  This is Sprint 1's documented upstream workaround, still unresolved as open decision 7.
 
 ---
 
@@ -1866,7 +2014,14 @@ reliably, and "silently broken by any install" is a bad property to carry into P
 Options, unchanged: recreate the junction as a documented Phase 5 step, add the
 devDependency, or check whether a newer `@opennextjs/cloudflare` has fixed the upstream
 packaging bug — still worth a look, since a fixed upstream removes the problem outright.
-**This needs an answer before Phase 5 starts.**
+
+**Phase 5 update: this did not block anything, and it is still open.** No `npm install` ran
+during Phase 5, so the junction was intact and `npm run preview` started first time —
+`node_modules\esbuild` confirmed as a reparse point targeting
+`node_modules\@opennextjs\aws\node_modules\esbuild`. That is luck rather than a fix. The
+close-out runs the same OpenNext build through `npm run deploy`, so the trap is still live: if
+anything installs a package between now and the deploy, the deploy breaks in a way that reads
+like a build bug. **Still worth an answer before the close-out.**
 
 **8. Two smaller things — SETTLED in Phase 4: both defaults shipped, unobjected.**
 - **Where the "New question" button lives.** On `/mcq` beside the heading, with a second one
@@ -2046,48 +2201,78 @@ beside it, the way Sprint 1's criteria were.
 
 **Verification (Phase 5)**
 
-- [ ] Every phase's tests were written first and observed failing, with both the failing and
-      the passing run pasted into the chat
-- [ ] `npm test` passes, including Sprint 1's 156 tests
-- [ ] `npm run lint` passes with no new errors
-- [ ] `npm run build` succeeds
-- [ ] `npm run preview` serves the app on the Workers runtime and the whole feature works
-      there
-- [ ] The full flow was walked in a browser against the preview server: create, list,
-      search, edit, attempt correctly, attempt incorrectly, delete
-- [ ] Local D1 confirms every question has exactly one `is_correct = 1` choice
-- [ ] Local D1 confirms one `mcq_attempts` row per submitted attempt, with the correct
-      `is_correct`
-- [ ] Local D1 confirms `created_by` and `user_id` are null on every row, as the known
-      limitation states
-- [ ] Deleting a question leaves no orphan choices or attempts in the database
-- [ ] No cookie, token, session store, or `middleware.ts` was introduced, confirmed by
-      grepping `src/`
-- [ ] Nothing was deployed and the remote database was never touched during Phases 1 to 5
-- [ ] Each phase was committed as its own `phase N:` commit and pushed, per
+- [x] Every phase's tests were written first and observed failing, with both the failing and
+      the passing run pasted into the chat (all four implementation phases did this; the
+      chat holds a red run and a green run for each)
+- [x] `npm test` passes, including Sprint 1's tests (27 files, 459 tests, 0 failures — full
+      output in `ai-workspace/phase5-verification/test-run.txt`. 153 of Sprint 1's original
+      156 are untouched and green; the other 3 were the `/mcq` placeholder assertions that
+      Phase 4 replaced with 5 real ones, since this sprint deletes that placeholder)
+- [x] `npm run lint` passes with no new errors (`npx eslint src migrations` → exit 0, clean.
+      Bare `npm run lint` reports 7684 problems, all of them inside two generated bundles in
+      `.wrangler\tmp\` that `npm run preview` writes; `eslint.config.mjs` ignores
+      `.open-next/**` but not `.wrangler/**`. Zero problems in any file this sprint wrote —
+      reported to Manikanta, awaiting a decision, see Troubleshooting)
+- [x] `npm run build` succeeds (compiled in 10.6s, TypeScript clean, 11 static pages, every
+      MCQ route in the manifest — `ai-workspace/phase5-verification/build.txt`)
+- [x] `npm run preview` serves the app on the Workers runtime and the whole feature works
+      there (`Ready on http://127.0.0.1:8787` with `env.DB (quizmaker-db)` bound as local D1;
+      every step below was performed against that server, not `next dev`)
+- [x] The full flow was walked in a browser against the preview server: create, list,
+      search, edit, attempt correctly, attempt incorrectly, delete (21 screenshots and two
+      transcripts in `ai-workspace/phase5-verification/`; the walkthrough table in Phase 5
+      maps each step to its screenshot)
+- [x] Local D1 confirms every question has exactly one `is_correct = 1` choice (a
+      `GROUP BY q.id HAVING COUNT(c.id) < 2 OR SUM(c.is_correct) <> 1` sweep over the whole
+      bank returned **no rows**; `bad_choice_flags 0` and `bad_attempt_flags 0` on the domain
+      check too)
+- [x] Local D1 confirms one `mcq_attempts` row per submitted attempt, with the correct
+      `is_correct` (three attempts submitted in the browser, three rows written:
+      `is_correct` 0, then 1, then 0 after the edit moved the correct mark — matching what
+      the UI reported each time)
+- [x] Local D1 confirms `created_by` and `user_id` are null on every row, as the known
+      limitation states (`attempts_with_user 0`, `questions_with_creator 0` across the whole
+      database)
+- [x] Deleting a question leaves no orphan choices or attempts in the database
+      (`question_rows 0 / choice_rows 0 / attempt_rows 0` for the deleted id; totals went
+      `3 / 8 / 7` → `2 / 5 / 4`, back to the pre-run baseline; `orphan_choices 0` and
+      `orphan_attempts 0` on a `LEFT JOIN` sweep of the whole bank)
+- [x] No cookie, token, session store, or `middleware.ts` was introduced, confirmed by
+      grepping `src/` (`rg "cookies\(\)|Set-Cookie|getSession|createSession|jwt|middleware"`
+      returns nothing outside tests, and no `middleware.ts` exists in the repository)
+- [x] Nothing was deployed and the remote database was never touched during Phases 1 to 5
+      (no `--remote` and no `npm run deploy` has been run; every D1 command in the chat
+      carries `--local`, and wrangler printed `Resource location: local` each time)
+- [x] Each phase was committed as its own `phase N:` commit and pushed, per
       `phase-commit.mdc`, and every one of those commits was proposed and approved by
-      Manikanta before anything was staged, committed, or pushed
-- [ ] This PRD's phase markers, code references, and troubleshooting entries match what was
-      actually built
+      Manikanta before anything was staged, committed, or pushed (four `phase N:` commits,
+      `bae47e9`, `5d3bb9a`, `e2b866e`, `7194c1c`, each proposed in the chat and held until
+      Manikanta said go; Phase 5's own commit is proposed and unstaged)
+- [x] This PRD's phase markers, code references, and troubleshooting entries match what was
+      actually built (Phase 5 corrected one stale Known Limitation about edits preserving
+      choice ids — the shipped update replaces the whole choice set, which the D1 rows from
+      this run prove)
 
 ---
 
 ## Success Metrics
 
-Provisional results below are from Phase 4 on the dev server. Phase 5 re-measures them on the
-Workers runtime and fills the remaining gaps.
+Measured at the end of Phase 5 on the Workers runtime (`npm run preview`, port 8787), except
+where a row says otherwise. Screenshot references prefixed `p5-` are in
+`ai-workspace/phase5-verification/`; unprefixed ones are Phase 4's dev-server walk.
 
 | Metric | Target | How Measured | Result |
 |--------|--------|--------------|--------|
-| Question creation time | A teacher creates a question in under 60 seconds | One form, one submit; timed during the Phase 5 browser walk | Provisional: the walkthrough filled and submitted the whole form in well under a minute of wall time, but it was scripted, so this is not yet a fair reading of a human doing it |
-| Data integrity | 0 questions in the database with fewer than two choices or without exactly one correct choice | SQL over local D1 after the Phase 5 walk | Pending Phase 5 |
-| Attempts are never lost | 100% of submitted attempts appear in `mcq_attempts` with the right `is_correct` | Count submitted attempts during the walk, compare with `SELECT COUNT(*)` | Pending Phase 5 |
-| Correctness is decided server-side | 0 paths where client input determines correctness | Code review plus a service test that sends a false `isCorrect` and is ignored | Met. `submitAttempt` posts only `{ choiceId }`; `attempt-form.tsx` renders the returned verdict and computes nothing |
-| Test coverage of the MCQ surface | Every service function and every documented status code has a test | Test count and a checklist against the endpoint list | Met for phases 1–4: 301 MCQ tests (77 schema, 50 service, 86 routes, 88 UI) |
-| Validation parity | 0 rules the form accepts and the API rejects, or the reverse | Both import the same schema; asserted by a test that the form uses `questionInputSchema` | Met. `question-form.tsx` imports `questionInputSchema` and `pathErrors` from the route's own module; walkthrough `06` shows the browser producing the API's messages |
-| Search feels instant | Filtering issues no network request | Assert `fetch` call count is unchanged while typing | Met. Test pins exactly 1 call after typing; walkthrough counted 0 extra `GET /api/mcq` |
-| Sprint stays in scope | 0 out-of-scope features built | No cookie, token, session, or middleware in `src/`; no out-of-scope item from the list above | Holding. No session work was added; `created_by` and `user_id` are still null everywhere. Phase 5 does the grep to confirm |
-| Accidental data loss | 0 questions deleted without a confirmation step | Delete is only reachable through the `AlertDialog`, asserted by test | Met. A test proves the menu item alone sends no request; walkthrough `18` shows Cancel leaving the row intact |
+| Question creation time | A teacher creates a question in under 60 seconds | One form, one submit; timed during the Phase 5 browser walk | **Not honestly measurable from this run.** The scripted create — fill name, question text, three choices, mark one correct, submit, land back on the list — took a couple of seconds of wall time, but a script types instantly and never reads the labels. What the run does establish is that it is one form and one submit with no intermediate step, so the interaction cost is low. A real reading needs a human, which this sprint has not done |
+| Data integrity | 0 questions in the database with fewer than two choices or without exactly one correct choice | SQL over local D1 after the Phase 5 walk | **Met.** `GROUP BY q.id HAVING COUNT(c.id) < 2 OR SUM(c.is_correct) <> 1` returned no rows over the whole bank. `bad_choice_flags 0`, `bad_attempt_flags 0` on the `is_correct IN (0,1)` domain check |
+| Attempts are never lost | 100% of submitted attempts appear in `mcq_attempts` with the right `is_correct` | Count submitted attempts during the walk, compare with `SELECT COUNT(*)` | **Met.** Three attempts submitted in the browser, three rows in `mcq_attempts`, `is_correct` 0 / 1 / 0 matching what the UI reported each time. Two of them survived an intervening edit that replaced every choice row — see the Known Limitation on `choice_id` going null |
+| Correctness is decided server-side | 0 paths where client input determines correctness | Code review plus a service test that sends a false `isCorrect` and is ignored | **Met.** `submitAttempt` posts only `{ choiceId }`; `attempt-form.tsx` renders the returned verdict and computes nothing. Phase 5 also showed it live: after the edit moved the correct mark to choice 3, submitting the previously correct choice returned "Not quite" without the client being told anything had changed (`p5-15`) |
+| Test coverage of the MCQ surface | Every service function and every documented status code has a test | Test count and a checklist against the endpoint list | **Met.** 459 tests in 27 files, all passing. **306** of them live in the MCQ files this sprint wrote — 77 schema (49 + 28), 50 service, 86 routes and validation (19 + 23 + 13 + 31), 93 UI (24 + 22 + 14 + 8 + 13 + 7 + 5). The remaining 153 are Sprint 1's, unchanged apart from `src/app/mcq/page.test.tsx`, which Phase 4 rewrote because it asserted the placeholder copy this sprint deletes |
+| Validation parity | 0 rules the form accepts and the API rejects, or the reverse | Both import the same schema; asserted by a test that the form uses `questionInputSchema` | **Met.** `question-form.tsx` imports `questionInputSchema` and `pathErrors` from the route's own module. Phase 5 checked both edges of every cap in the browser: 101 / 1001 / 501 characters each rejected with the API's own message (`p5-04`), 100 / 1000 / 500 accepted and stored at full length (`p5-05`) |
+| Search feels instant | Filtering issues no network request | Assert `fetch` call count is unchanged while typing | **Met.** Test pins exactly 1 call after typing; the Phase 5 walk counted **0** extra `GET /api/mcq` while typing, with the URL unchanged and no query param (`p5-09`) |
+| Sprint stays in scope | 0 out-of-scope features built | No cookie, token, session, or middleware in `src/`; no out-of-scope item from the list above | **Met.** The grep returns nothing outside tests, there is no `middleware.ts` in the repository, and the data agrees: `attempts_with_user 0`, `questions_with_creator 0`. Nothing from the Out of Scope list was built |
+| Accidental data loss | 0 questions deleted without a confirmation step | Delete is only reachable through the `AlertDialog`, asserted by test | **Met.** A test proves the menu item alone sends no request. Phase 5 clicked Cancel first and confirmed the row stayed *and* that `GET /api/mcq/[id]` still returned 200, then confirmed and watched it go (`p5-31` to `p5-34`) |
+| Works on the deploy target | The whole feature works on `workerd`, not just `next dev` | `npm run preview`, then walk every flow against port 8787 | **Met.** Create, list, search, open, attempt wrong, retry correct, edit the correct choice, delete through the dialog, plus five API edge cases, all on the OpenNext worker with D1 bound. 21 screenshots and two transcripts |
 
 ---
 
@@ -2509,6 +2694,87 @@ and `--pool=forks` is a dependable fallback that ran all 64 component tests gree
 `threads` was flaking. Recorded so a one-off failure here is recognised as flake rather than
 treated as a broken suite. `vitest.config.ts` keeps `pool: "threads"` for speed.
 
+### `npm run lint` reports 7684 problems after a preview run (found in Phase 5, reported, NOT fixed)
+
+**Problem**: lint was clean at the end of Phase 4. After `npm run preview`, `npm run lint`
+exits 1 with `7684 problems (31 errors, 7653 warnings)` at line numbers past 100,000 —
+`@typescript-eslint/ban-ts-comment`, `no-unused-vars`, `no-unused-expressions` and so on.
+**Cause**: not source code. Filtering the report down to file paths gives exactly two files,
+both machine-generated:
+
+```
+C:\...\.wrangler\tmp\bundle-iNuCDP\middleware-insertion-facade.js
+C:\...\.wrangler\tmp\dev-7T4QDA\worker.js
+```
+
+`wrangler dev` — which `opennextjs-cloudflare preview` runs — writes its bundles into
+`.wrangler\tmp\`. `eslint.config.mjs:8-16` ignores `node_modules/**`, `.next/**`,
+`.open-next/**`, `out/**` and `build/**`, but not `.wrangler/**`. Both directories are
+git-ignored (`.gitignore:39` and `:42`), so the artifacts were never committed; they are just
+lintable. The temp directory names are random per run, so the count and line numbers vary.
+**Proof it is only the artifacts**: `npx eslint src migrations` exits **0** with no output.
+Zero problems in any file this sprint wrote.
+**Solution**: none applied. The fix is one line — add `".wrangler/**"` to the `ignores` array
+beside `".open-next/**"` — but Phase 5's brief is verification, and Manikanta asked to be
+told before anything is changed. Reported in the chat and awaiting approval. Deleting
+`.wrangler\tmp` also clears it, but only until the next preview.
+**Code Reference**: `eslint.config.mjs:8-16`
+
+### React `act()` warnings from `src/app/mcq/page.test.tsx` (found in Phase 5, reported, NOT fixed)
+
+**Problem**: `npm test` passes 459/459, but the run prints
+`An update to QuestionList inside a test was not wrapped in act(...)` on stderr for three of
+that file's five tests.
+**Cause**: the page test stubs `fetch` and asserts on the static heading, the create link and
+the logout control. It never awaits the list's own load, so `QuestionList` resolves its fetch
+and sets state after the assertion has already passed. The component's own tests in
+`src/components/mcq/question-list.test.tsx` do await the load and are silent.
+**Impact**: noise only. No test fails, and nothing is being missed — the list's behaviour is
+covered properly in its own file. Left as a warning rather than hidden.
+**Solution**: none applied, for the same reason as above. The fix would be to await a settled
+list in each of the three tests, or to mock `QuestionList` out of the page test entirely,
+since the page's job is composition rather than data loading. Needs Manikanta's approval.
+**Code Reference**: `src/app/mcq/page.test.tsx`
+
+### Two harmless warnings in the preview build (found in Phase 5, no fix possible)
+
+**Problem**: `npm run preview` prints, every time:
+`WARN OpenNext is not fully compatible with Windows` with a WSL recommendation, and one
+esbuild `Duplicate key "options" in object literal` pointing into
+`.open-next/server-functions/default/.next/server/chunks/ssr/_0spfsg4._.js`.
+**Cause**: the first is OpenNext's blanket platform warning. The second is inside bundled
+`@base-ui/react` code — a duplicate key in a third-party object literal, not in anything this
+repository wrote.
+**Solution**: nothing to do. The build completed, the worker started, and the whole feature
+worked through it. Recorded so neither is mistaken for a Phase 5 defect. Both are in
+`ai-workspace/phase5-verification/preview.log`.
+
+### PowerShell strips the inner double quotes from an inline JSON body (found in Phase 5, worked around)
+
+**Problem**: the first pass at the bogus-id API checks looked like a real bug. A `PUT` with a
+perfectly valid body to a nonexistent id returned
+`400 {"error":"Validation failed","fields":{"body":"Expected a JSON object"}}` instead of the
+documented `404 Question not found`, and the nested attempt route did the same.
+**Cause**: the harness, not the app. `curl.exe -d '{"name":"x"}'` under PowerShell loses the
+inner double quotes on the way to the native executable, so the worker received something that
+was not JSON and the malformed-body branch answered correctly. This is the same class of trap
+as the Phase 3 entries about `?` in a URL and `-o $null`, and Sprint 1's own note about bodies
+with spaces.
+**Solution**: write the body to a file and pass `--data-binary "@file"`. Both routes then
+returned `404 {"error":"Question not found"}`, as documented. Recorded because the false
+reading was convincing enough to have been filed as a bug.
+
+### The local D1 file can be read while the preview worker is running (found in Phase 5, no fix needed)
+
+**Problem**: an open question going into Phase 5 — miniflare holds
+`.wrangler\state\v3\d1` open while `workerd` serves, so it was unclear whether
+`wrangler d1 execute --local` would fail or, worse, crash the worker the way it did in
+Sprint 1's Phase 1.
+**Solution**: it works. Every Phase 5 database read ran against the live preview server with
+no lock error and no crash. The walkthrough is still split into `main` and `delete` stages,
+because the attempts had to be inspected at a moment when the browser was not mid-flow, but
+that is sequencing rather than a lock workaround.
+
 ---
 
 ## Notes for AI Agents
@@ -2564,46 +2830,67 @@ treated as a broken suite. `vitest.config.ts` keeps `pool: "threads"` for speed.
 
 ## Current Status
 
-**Last Updated**: Aug 31, 2026 (Phase 4 COMPLETED)
-**Current Phase**: Phase 4 — UI and Polish, COMPLETED. Phase 5 not started and will not start
-until Manikanta says "go Phase 5".
+**Last Updated**: Aug 31, 2026 (Phase 5 COMPLETED — all five phases done)
+**Current Phase**: Phase 5 — End-to-End Verification, COMPLETED. **All five implementation
+phases are finished.** The only work left in this document is the close-out step, which runs
+only when Manikanta asks for it by name.
 **Branch**: `feature/mcq-crud`, branched from `origin/main` after Sprint 1 merged as
-`1bf5a54`. Five commits, all pushed:
+`1bf5a54`. Six commits, all pushed:
 - `4731310 chore: add phase commit workflow rule`
 - `ca8e9c0 chore: require approval before staging, committing, pushing, or deploying`
 - `bae47e9 phase 1: add MCQ tables migration and schema tests`
 - `5d3bb9a phase 2: add MCQ service with real-SQLite tests`
 - `e2b866e phase 3: add MCQ API routes and Zod validation`
+- `7194c1c phase 4: add MCQ UI with search, toasts and confirmation delete`
 
-Phase 4's files are **uncommitted** and awaiting Manikanta's review of the walkthrough —
-nothing has been staged.
-**Status**: The feature is complete end to end on the dev server. The three MCQ tables exist
-in local D1, every database call lives behind `mcq-service.ts`, all six endpoints are live
-and validated, and the UI can create, search, edit, delete and attempt a question with the
-declared polish working. 459 tests pass in 27 files, lint is clean, and `npm run build`
-compiles with all four MCQ routes in the manifest. The whole UI was walked in real headless
-Chromium and the evidence — 22 screenshots and a transcript — is in
-`ai-workspace/phase4-walkthrough/`. The remote database has never been touched and nothing
-has been deployed.
-**Known caveat**: `npx tsc --noEmit` reports the same 14 pre-existing errors in Sprint 1's
-two auth route test files, 0 in anything Phases 1 to 4 created. `npm run build` passes
-because Next.js does not typecheck test files. See Troubleshooting for the decision needed.
-**Baseline preserved**: Sprint 1's 156 tests still pass, except for
-`src/app/mcq/page.test.tsx`, which Phase 4 rewrote because it asserted the placeholder copy
-this phase deletes. Phase 1 added 77, Phase 2 added 50, Phase 3 added 86, Phase 4 added 88
-net.
-**Dependencies added this phase**: `sonner` (approved, decision 6), `next-themes` (pulled in
+Phase 5's files are **uncommitted** and awaiting Manikanta's review — nothing has been
+staged. Phase 5 changed no application code; it added
+`ai-workspace/phase5-verification/` and updated this PRD.
+**Status**: The feature is complete and verified on the runtime it will deploy to. The three
+MCQ tables exist in local D1, every database call lives behind `mcq-service.ts`, all six
+endpoints are live and validated, and the UI can create, search, edit, delete and attempt a
+question with the declared polish working. 459 tests pass in 27 files, `npx eslint src
+migrations` is clean, and `npm run build` compiles with every MCQ route in the manifest.
+
+Phase 5 then took the whole flow through `npm run preview` — the OpenNext bundle on `workerd`
+with D1 bound — in real headless Chromium: create with three choices, see it listed, search
+it, open it, answer wrong, retry correct, edit which choice is correct, then delete through
+the confirmation dialog. Local D1 confirmed all three attempts persisted with the right
+verdicts, and that deleting the question left `0 / 0 / 0` behind with no orphans anywhere in
+the bank. Evidence — 21 screenshots, two transcripts, and the test, build and preview logs —
+is in `ai-workspace/phase5-verification/`.
+
+The remote database has never been touched and nothing has been deployed.
+**Known caveats**, all recorded in Troubleshooting and none of them fixed, because Phase 5's
+brief was to verify and report rather than change code:
+1. `npx tsc --noEmit` reports the same 14 pre-existing errors in Sprint 1's two auth route
+   test files, 0 in anything this sprint created. `npm run build` passes because Next.js does
+   not typecheck test files.
+2. Bare `npm run lint` reports 7684 problems after a preview run, all inside two generated
+   bundles in `.wrangler\tmp\`. `eslint.config.mjs` ignores `.open-next/**` but not
+   `.wrangler/**`. A one-line config change fixes it; awaiting approval.
+3. `src/app/mcq/page.test.tsx` prints React `act()` warnings on three of its five tests. Noise
+   only — the list's behaviour is covered properly in its own file.
+**Baseline preserved**: Sprint 1's 153 surviving tests still pass. The only Sprint 1 test file
+this sprint changed is `src/app/mcq/page.test.tsx`, rewritten in Phase 4 because it asserted
+the placeholder copy this sprint deletes. This sprint's own files hold 306 tests: 77 schema,
+50 service, 86 routes and validation, 93 UI.
+**Dependencies added this sprint**: `sonner` (approved, decision 6), `next-themes` (pulled in
 by shadcn's `sonner` template, not requested — see troubleshooting), and `playwright` as a
-devDependency (approved specifically so the walkthrough could produce real browser
-evidence).
-**Open decisions**: 1 and 3 are settled. 2 and 4 are closed by what shipped. 5 was built as
-specified and is confirmed by the walkthrough, which shows the edit form seeded with the
-correct choice pre-marked. 6 is settled — `sonner` was approved and installed. 8 is closed by
-what shipped and by the walkthrough. **Decision 7 (`esbuild`) blocks Phase 5** and is now
-more urgent: two `npm install` runs in this phase each destroyed the junction.
-**Next Steps**: Manikanta reads the walkthrough and reviews the Phase 4 diff, approves or
-amends the commit, then says "go Phase 5". Decision 7 needs an answer in the same pass, since
-Phase 5 runs `npm run preview` and cannot start without it.
+devDependency (approved specifically so the walkthroughs could produce real browser
+evidence). Phase 5 added nothing and ran no `npm install`.
+**Open decisions**: 1 and 3 are settled. 2 and 4 are closed by what shipped, and Phase 5
+sharpened 4 — every edit nulls that question's attempt `choice_id`s, not just an unlucky one,
+so the text-snapshot option is worth a real answer before a future sprint reports on attempts.
+5, 6 and 8 are settled and confirmed by the walkthroughs. **Decision 7 (`esbuild`) is still
+open** but no longer blocking: the junction survived Phase 5 because no `npm install` ran, and
+`npm run preview` started first time. It stays a trap for the close-out, since a deploy runs
+the same OpenNext build.
+**Next Steps**: Manikanta reads the Phase 5 verification and this PRD diff, then approves or
+amends the Phase 5 commit. Three things want an answer in the same pass: the `.wrangler`
+lint-ignore line, the `act()` warnings, and decision 7. The close-out — remote migration and
+deploy — happens only when he asks for it by name, with each of the two dangerous commands
+confirmed individually.
 
 **Phase Status Summary**:
 
@@ -2612,7 +2899,10 @@ Phase 5 runs `npm run preview` and cannot start without it.
   built from the migrations, plus a real local D1 replay of every SQL shape)
 - Phase 3 — API Routes and Validation: COMPLETED (Aug 31, 2026 — 86 tests, plus a curl run
   covering every documented status code against real local D1)
-- Phase 4 — UI and Polish: COMPLETED (Aug 31, 2026 — 88 net tests, clean lint and build, plus
+- Phase 4 — UI and Polish: COMPLETED (Aug 31, 2026 — 90 net tests, clean lint and build, plus
   a 22-screenshot browser walkthrough in real headless Chromium)
-- Phase 5 — End-to-End Verification: PLANNED
+- Phase 5 — End-to-End Verification: COMPLETED (Aug 31, 2026 — 459 tests green, clean build,
+  the whole flow walked on `workerd` via `npm run preview` with 21 screenshots, local D1
+  proving attempt persistence and a clean cascade, and three issues reported rather than
+  quietly fixed)
 - Close-out — Remote Migration and Deployment: NOT STARTED, requires explicit instruction

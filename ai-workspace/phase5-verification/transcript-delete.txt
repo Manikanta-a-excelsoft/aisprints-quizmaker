@@ -1,0 +1,33 @@
+
+=== 14. Deleting it through the confirmation dialog ===
+URL: http://127.0.0.1:8787/mcq
+Rows before: Photosynthesis inputs, General question, Largest planet
+Chose Delete. A confirmation dialog appeared rather than the row vanishing.
+  Title: "Delete this question?"
+  Body:  "“Photosynthesis inputs” and its choices will be removed. This cannot be undone."
+  Buttons: "Cancel", "Delete question"
+    [screenshot 31-delete-confirm-dialog.png]
+Clicked "Cancel" first, to prove the dialog is a real gate:
+  Row still present? true
+  Question still readable over the API? true
+Reopened the dialog and clicked "Delete question":
+  Toast said: "Question deleted"
+    [screenshot 32-delete-toast.png]
+  Row gone without a page reload? true
+  Rows remaining: General question, Largest planet
+    [screenshot 33-list-after-delete.png]
+  After a hard reload, rows are: General question, Largest planet
+  GET /api/mcq/22d9de730cec00bef3c52cb1f83492c8 now returns: 404
+    [screenshot 34-list-after-reload.png]
+
+=== 15. Edge case: a bogus id in the UI ===
+    !! console error: Failed to load resource: the server responded with a status of 404 (Not Found)
+URL: http://127.0.0.1:8787/mcq/not-a-real-id/attempt
+Card reads: "Question not found It may have been deleted since this link was made. Back to questions"
+    [screenshot 35-bogus-id-attempt.png]
+    !! console error: Failed to load resource: the server responded with a status of 404 (Not Found)
+URL: http://127.0.0.1:8787/mcq/not-a-real-id/edit
+Card reads: "Question not found It may have been deleted since this link was made. Back to questions"
+    [screenshot 36-bogus-id-edit.png]
+
+=== stage 'delete' finished cleanly ===

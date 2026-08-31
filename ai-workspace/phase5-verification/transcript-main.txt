@@ -1,0 +1,116 @@
+
+=== 1. The list page, served by the worker ===
+URL: http://127.0.0.1:8787/mcq
+Heading: "Multiple choice questions"
+Rows already in the bank: General question, Largest planet
+Server header: (none)
+    [screenshot 01-list-on-worker.png]
+
+=== 2. Edge case: submitting a completely empty form ===
+URL: http://127.0.0.1:8787/mcq/new
+Choice rows on a fresh form: 2
+Clicked "Create question" with every field blank.
+  Inline errors: "Name is required", "Question text is required", "Choice text is required", "Choice text is required", "Mark exactly one choice as the correct answer"
+  Still on the create page? true
+  Any toast raised? false
+    [screenshot 02-empty-form-errors.png]
+
+=== 3. Edge case: the maximum of six choices ===
+  Click 1 on "Add choice" → 3 choices, button disabled? false
+  Click 2 on "Add choice" → 4 choices, button disabled? false
+  Click 3 on "Add choice" → 5 choices, button disabled? false
+  Click 4 on "Add choice" → 6 choices, button disabled? true
+  Choice rows now: 6
+  "Add choice" disabled? true
+  Copy beside it: "A question can have at most six choices"
+  "Remove choice 6" enabled? true
+    [screenshot 03-six-choices-capped.png]
+  Removed back down to 2 choices.
+  "Remove choice 1" disabled at the floor of two? true
+
+=== 4. Edge case: one character over every limit ===
+Name 101 chars, question text 1001 chars, choice 1 501 chars. Submitted.
+  Inline errors: "Name must be at most 100 characters", "Question text must be at most 1000 characters", "A choice must be at most 500 characters"
+  Still on the create page? true
+    [screenshot 04-over-character-limits.png]
+
+=== 5. Edge case: exactly on every limit ===
+Trimmed each field to exactly 100 / 1000 / 500 characters. Submitted.
+  Toast said: "Question created"
+  Accepted, and the URL is now: http://127.0.0.1:8787/mcq
+  Row reads: LLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLL | QQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQ…
+    [screenshot 05-at-character-limits-accepted.png]
+  Stored name length: 100, question text length: 1000
+  Removed the boundary question again so it does not clutter the run.
+
+=== 6. Creating a question with three choices ===
+URL: http://127.0.0.1:8787/mcq/new
+Name: "Photosynthesis inputs"
+Question text: "Which two raw materials does a plant take in for photosynthesis?"
+  Choice 1: "Carbon dioxide and water"
+  Choice 2: "Oxygen and glucose"
+  Choice 3: "Nitrogen and sunlight"
+Marked choice 1 ("Carbon dioxide and water") as the correct answer.
+    [screenshot 06-create-three-choices.png]
+  Toast said: "Question created"
+    [screenshot 07-create-toast.png]
+
+=== 7. Confirming it shows up in the list ===
+Redirected to: http://127.0.0.1:8787/mcq
+Row reads: Photosynthesis inputs | Which two raw materials does a plant take in for photosynthesis? | 3
+All rows: Photosynthesis inputs, General question, Largest planet
+    [screenshot 08-list-after-create.png]
+
+=== 8. Searching for it ===
+Typed "photosynth" into the search box.
+  Rows now: Photosynthesis inputs
+  Extra GET /api/mcq requests caused by typing: 0
+  URL unchanged, no query param? http://127.0.0.1:8787/mcq
+    [screenshot 09-search-filtered.png]
+
+=== 9. Opening it ===
+Opened the row's actions menu. Items: Preview, Edit, Delete
+URL: http://127.0.0.1:8787/mcq/22d9de730cec00bef3c52cb1f83492c8/attempt
+Heading: "Photosynthesis inputs"
+Prompt: "Which two raw materials does a plant take in for photosynthesis?"
+Choices offered, in position order: Carbon dioxide and water / Oxygen and glucose / Nitrogen and sunlight
+Submit disabled before anything is picked? true
+Correct answer revealed already? false
+    [screenshot 10-attempt-unanswered.png]
+
+=== 10. Attempting it with the wrong answer ===
+Picked "Oxygen and glucose" and clicked "Submit answer".
+  Result banner: "Not quite. The correct answer was “Carbon dioxide and water”."
+  "Correct answer" badge sits beside: "Carbon dioxide and water Correct answer"
+  Radios locked after answering? true
+  "Try again" offered instead of Submit? true
+    [screenshot 11-attempt-incorrect.png]
+
+=== 11. Trying again with the correct answer ===
+Clicked "Try again".
+  Result banner cleared? true
+  Nothing pre-selected, submit disabled again? true
+Picked "Carbon dioxide and water" and clicked "Submit answer".
+  Result banner: "Correct"
+    [screenshot 12-attempt-correct.png]
+
+=== 12. Editing it and changing which choice is correct ===
+URL: http://127.0.0.1:8787/mcq/22d9de730cec00bef3c52cb1f83492c8/edit
+Heading: "Edit question"
+Name seeded with: "Photosynthesis inputs"
+  Choice 1: "Carbon dioxide and water" — marked correct? true
+  Choice 2: "Oxygen and glucose" — marked correct? false
+  Choice 3: "Nitrogen and sunlight" — marked correct? false
+    [screenshot 13-edit-seeded.png]
+Moved the correct mark from choice 1 to choice 3 ("Nitrogen and sunlight").
+  Choice 1 now unmarked? true
+  Toast said: "Question updated"
+    [screenshot 14-edit-toast.png]
+  Back on: http://127.0.0.1:8787/mcq
+Reopened the attempt page to confirm the new correct choice took effect:
+  Submitted the old correct choice. Banner: "Not quite. The correct answer was “Nitrogen and sunlight”."
+    [screenshot 15-attempt-after-edit.png]
+
+Question id for the D1 check: 22d9de730cec00bef3c52cb1f83492c8
+
+=== stage 'main' finished cleanly ===

@@ -1,0 +1,39 @@
+﻿
+> aisprints-quizmaker@0.1.0 build
+> next build
+
+Using secrets defined in .dev.vars
+Γû▓ Next.js 16.2.12 (Turbopack)
+
+  Creating an optimized production build ...
+Γ£ô Compiled successfully in 10.6s
+  Running TypeScript ...
+  Finished TypeScript in 44s ...
+  Collecting page data using 15 workers ...
+  Generating static pages using 15 workers (0/11) ...
+  Generating static pages using 15 workers (2/11) 
+  Generating static pages using 15 workers (5/11) 
+  Generating static pages using 15 workers (8/11) 
+Γ£ô Generating static pages using 15 workers (11/11) in 577ms
+  Finalizing page optimization ...
+
+Route (app)
+Γöî Γùï /
+Γö£ Γùï /_not-found
+Γö£ ╞Æ /api/auth/login
+Γö£ ╞Æ /api/auth/logout
+Γö£ ╞Æ /api/auth/register
+Γö£ ╞Æ /api/mcq
+Γö£ ╞Æ /api/mcq/[id]
+Γö£ ╞Æ /api/mcq/[id]/attempts
+Γö£ Γùï /login
+Γö£ Γùï /mcq
+Γö£ ╞Æ /mcq/[id]/attempt
+Γö£ ╞Æ /mcq/[id]/edit
+Γö£ Γùï /mcq/new
+Γöö Γùï /register
+
+
+Γùï  (Static)   prerendered as static content
+╞Æ  (Dynamic)  server-rendered on demand
+
