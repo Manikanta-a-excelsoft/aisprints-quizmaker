@@ -1,8 +1,12 @@
 Date created: Aug 31, 2026
-Date last modified: Aug 31, 2026 (Phase 1 COMPLETED — the three MCQ tables are applied to
-local D1 and proven by 77 new tests. Revised earlier the same day so that every commit,
-push, remote migration, and deploy is proposed and waits for Manikanta's explicit approval
-rather than happening on the agent's own initiative.)
+Date last modified: Aug 31, 2026 (Phase 2 COMPLETED — `mcq-service.ts` owns every database
+call for questions, choices and attempts, proven by 50 tests against a real SQLite database
+built from the migration files. Open decisions 1 and 3 settled: real SQLite through
+`node:sqlite` rather than a fake, and replace-all editing rather than a choice diff. Phase 1
+COMPLETED earlier the same day — the three MCQ tables applied to local D1, proven by 77
+tests. Revised before that so every commit, push, remote migration, and deploy is proposed
+and waits for Manikanta's explicit approval rather than happening on the agent's own
+initiative.)
 
 # MCQ CRUD and Attempts - Technical PRD
 
@@ -741,45 +745,146 @@ shadcn installs, no dependency added.
 service generating question ids) is settled in the schema as written — the
 `DEFAULT (lower(hex(randomblob(16))))` is on all three tables, so the column style matches
 `users` and the service can still supply an explicit id in Phase 2. Decision 1 (what "real
-local D1" means for the Phase 2 tests) **must be settled before Phase 2 starts.**
+local D1" means for the Phase 2 tests) was settled at the start of Phase 2 as option B.
 
 **Not in this phase**: no TypeScript service code, no routes, no UI.
 
-### Phase 2: MCQ Service - PLANNED
+### Phase 2: MCQ Service - COMPLETED
 
 **Objective**: Every database call for questions, choices, and attempts lives behind
-`src/lib/services/mcq-service.ts`, exercised against a real SQLite database rather than a
-hand-written mock — pending open decision 1, which fixes what "real" means here.
+`src/lib/services/mcq-service.ts`, exercised against a real SQLite database with the real
+migrations applied rather than a hand-written mock.
 
 **Tasks**:
 1. **Red**: write `src/lib/services/mcq-service.test.ts` first, covering create with the
-   batch, list with choice counts, read, update through the choice diff, delete with
+   batch, list with choice counts, read, update through the choice replacement, delete with
    cascade, `recordAttempt` deciding correctness server-side, a choice belonging to another
    question being rejected, and the conventions Sprint 1's suite enforces — numbered
-   placeholders only, and `.first()` never called. Paste the failing run.
-2. **Green**: implement the service until green.
-3. Update this PRD, then propose the commit and wait for approval.
+   placeholders only, and `.first()` never called. Paste the failing run. **Done.**
+2. **Green**: implement the service until green. **Done.**
+3. Update this PRD, then propose the commit and wait for approval. **Done.**
 
-**Exported surface planned**:
+**What was built**
+
+`src/lib/services/mcq-service.test.ts`, 50 tests, written and run before the service
+existed. The failing run was a collection failure for the right reason —
+`Error: Cannot find module '/src/lib/services/mcq-service'`, 0 tests collected — which is
+the same red Sprint 1's Phase 2 opened with.
+
+**How the tests get a real database.** Open decision 1 was settled as option B, with the
+mechanism taken from `user-service.test.ts`. The injection point is identical: `vi.hoisted`
+holds a per-test database, `vi.mock("@opennextjs/cloudflare")` makes
+`getCloudflareContext()` return `{ env: { DB: dbHolder.current } }`, and `beforeEach` builds
+a fresh one. What differs is what gets injected. Sprint 1 injected a fake that replayed
+queued rows; Phase 2 injects a real `node:sqlite` database created by reading and executing
+`migrations/0001_create_users_table.sql` and `migrations/0002_create_mcq_tables.sql` from
+disk, wrapped in a ~70-line adapter (`createLocalD1`) exposing the slice of the D1 API the
+service uses.
+
+The consequence worth stating plainly: no test in this file asserts that a particular SQL
+string was produced. Every assertion is about rows that a real SQL engine actually wrote,
+read, cascaded or rejected. The atomicity tests roll back because `batch()` runs a real
+`BEGIN`/`COMMIT`/`ROLLBACK`, and the cascade tests cascade because the adapter sets
+`PRAGMA foreign_keys = ON` — plain SQLite defaults it off, D1 has it on.
+
+Four `node:sqlite` behaviors were verified before the adapter was written, because the whole
+approach depends on them: `?1`-style numbered placeholders bind positionally from varargs,
+`INSERT ... RETURNING` returns its rows through `.all()`, `.run()` reports `changes`
+including 0 for a miss, and an exception inside `BEGIN` rolls the transaction back.
+
+**What the adapter does not prove.** It emulates D1's `batch()` and its error message
+formats rather than observing them. To narrow that gap, every SQL shape the service issues
+was then run against the real local D1 with
+`wrangler d1 execute quizmaker-db --local --file`: `INSERT ... RETURNING` on both tables,
+the `UPDATE ... RETURNING`, the delete-then-insert replacement, the attempt insert, and the
+`LEFT JOIN` / `GROUP BY` / `ORDER BY q.rowid` list query. All returned `success: true`, and
+the final counts confirmed the cascade — `0 questions / 0 choices / 0 attempts` after
+deleting the one parent row. Local D1 was left clean. Phase 3's curl checks and Phase 5's
+preview walk close the rest of the gap.
+
+**Exported surface as delivered**:
 
 | Export | Signature | Notes |
 |---|---|---|
-| `createQuestion` | `(input: QuestionInput) => Promise<Question>` | One `db.batch()`: the question and all its choices, or nothing |
+| `createQuestion` | `(input: QuestionInput) => Promise<Question>` | One `db.batch()`: the question and all its choices, or nothing. Assembled from the batch's own `RETURNING` rows, so there is no follow-up read |
 | `listQuestions` | `() => Promise<QuestionSummary[]>` | `LEFT JOIN` for `choiceCount`, newest first |
 | `findQuestionById` | `(id: string) => Promise<Question \| null>` | Question plus choices ordered by `position, id` |
-| `updateQuestion` | `(id, input) => Promise<Question \| null>` | Diff the choices, set `updated_at`, `null` for a missing id |
+| `updateQuestion` | `(id, input) => Promise<Question \| null>` | Replaces the whole choice set inside one batch, sets `updated_at`, `null` for a missing id |
 | `deleteQuestion` | `(id: string) => Promise<boolean>` | `true` only when `meta.changes > 0` |
-| `recordAttempt` | `(questionId, choiceId) => Promise<AttemptResult>` | Reads `is_correct` from the database; never trusts the caller |
+| `recordAttempt` | `(questionId, choiceId, userId?) => Promise<AttemptResult \| null>` | Reads `is_correct` from the database; never trusts the caller. `null` for a missing question, throws for a foreign choice |
 | `toPublicQuestion` | `(q: Question) => PublicQuestion` | Strips `isCorrect`, the one safe way for a route to answer the attempt page |
 | `ChoiceNotInQuestionError` | `class` | Lets the route answer 400 rather than 500 |
-| `Question`, `PublicQuestion`, `QuestionSummary`, `Attempt`, `AttemptResult` | types | |
+| `Question`, `PublicQuestion`, `Choice`, `PublicChoice`, `QuestionSummary`, `ChoiceInput`, `QuestionInput`, `Attempt`, `AttemptResult` | types | |
 
 `toPublicQuestion` mirrors `toPublicUser`: the risk of leaking `isCorrect` is handled once,
 in the service, rather than trusted to each route.
 
+**Three signatures moved from the plan, each for a reason:**
+
+- `recordAttempt` gained an optional third parameter, `userId: string | null = null`. It is
+  never passed by anything in this sprint and it defaults to null, so behavior is unchanged;
+  it exists so the session sprint can attribute attempts without touching the SQL. One test
+  inserts a real user and passes their id to prove the column and the parameter work.
+- `recordAttempt` returns `AttemptResult | null` rather than `AttemptResult`. Null means the
+  question does not exist, which lets Phase 3 answer 404, while
+  `ChoiceNotInQuestionError` stays for 400. Without the split the route could not tell the
+  two apart.
+- `updateQuestion` replaces the choice set instead of diffing it, per Manikanta's
+  instruction on Aug 31, settling open decision 3. See the note below.
+
+**Replace-all editing, and what it costs.** `updateQuestion` deletes every choice for the
+question and inserts the new list, all inside the same batch as the `UPDATE`. Choice ids
+therefore change on every edit. Because `mcq_attempts.choice_id` is `ON DELETE SET NULL`,
+an attempt whose choice is replaced keeps its row and its `is_correct`, but which choice was
+picked is no longer recoverable. That is the trade-off decision 3 flagged, and it is now
+pinned by a test — `keeps an attempt after its chosen choice is replaced by an edit` asserts
+the surviving row has `choice_id` null and `is_correct` 1.
+
+**Two implementation choices worth recording:**
+
+- `updateQuestion` runs a `SELECT id` existence check before the batch. Without it, updating
+  a missing id would attempt to insert choices referencing a question that does not exist
+  and fail on the foreign key, surfacing a constraint error where the contract promises
+  `null`. The extra read buys the honest return value.
+- `listQuestions` orders by `q.created_at DESC, q.rowid DESC`, not `q.id DESC` as the plan
+  had it. `CURRENT_TIMESTAMP` has second precision, so two questions created in the same
+  second tie on `created_at`, and a random hex id breaks that tie unpredictably — the
+  "newest first" test would have been flaky. `rowid` is insertion order, so it is
+  deterministic. Confirmed working on real local D1.
+
+**Test coverage, 50 tests**: create (8, including the batch rollback and a count of the
+statements issued), list (5), read (4), update (10, including three separate orphan and
+rollback proofs), delete (4), attempts (11), `toPublicQuestion` (2), and d1.mdc conventions
+(4).
+
+Three of those tests are the orphan proof the brain-dump asked for, since one assertion
+would not have covered it:
+- `replaces the choice set and removes the old choices` — captures the old choice ids, and
+  after the replace asserts none of them appear anywhere in `mcq_choices`, and that the
+  table holds exactly the 2 new rows. Detaching rather than deleting them would fail this.
+- `leaves no orphaned choices anywhere in the table after a replace` — a `LEFT JOIN` from
+  `mcq_choices` back to `mcq_questions` returning zero rows with a null parent, plus a check
+  that a second, untouched question kept both of its choices.
+- `keeps the original choices when the replacement fails part-way` — a replacement whose
+  second choice violates `NOT NULL` leaves all three original choices intact, proving the
+  delete and the inserts really do share one transaction.
+
+**Results**
+
+```
+ Test Files  1 passed (1)
+      Tests  50 passed (50)
+```
+
+Full suite after the phase: **17 files, 283 tests, all passing**, up from 16 files and 233
+tests at the end of Phase 1. `npm run lint` clean. `npx tsc --noEmit` reports no error in
+either new file; the 14 pre-existing errors in Sprint 1's auth route tests are unchanged and
+still logged under Troubleshooting.
+
 **Deliverables**:
-- `src/lib/services/mcq-service.ts`
-- `src/lib/services/mcq-service.test.ts` passing
+- `src/lib/services/mcq-service.ts` — 390 lines, the only module that touches `env.DB` for
+  MCQ data
+- `src/lib/services/mcq-service.test.ts` — 50 tests passing
 - Phase 2 status and code references in this PRD
 
 **Not in this phase**: no HTTP handlers, no Zod schemas, no UI.
@@ -913,21 +1018,23 @@ it safe to apply, but that should be re-read at the time rather than trusted fro
 
 ## Technical Implementation Details
 
-To be filled in as each phase lands. What follows is the plan, not a record of built code.
+Filled in as each phase lands. Phases 1 and 2 are a record of built code; Phases 3 to 5 are
+still the plan.
 
 ### Key Files
 
-Planned for Phase 1:
+Delivered in Phase 1:
 
 - `migrations/0002_create_mcq_tables.sql` — the three tables, constraints, and five indexes
 - `migrations/mcq-migrations.test.ts` — text contract over the migration SQL
 - `migrations/mcq-schema.test.ts` — executes `0001` then `0002` against `node:sqlite` and
   asserts real constraint and cascade behavior
 
-Planned for Phase 2:
+Delivered in Phase 2:
 
 - `src/lib/services/mcq-service.ts` — the only module that touches `env.DB` for MCQ data
-- `src/lib/services/mcq-service.test.ts`
+- `src/lib/services/mcq-service.test.ts` — 50 tests against a real SQLite database built
+  from the migration files, including the `createLocalD1` adapter
 
 Planned for Phase 3:
 
@@ -946,38 +1053,80 @@ Planned for Phase 4:
 
 ### Implementation Patterns
 
-Writing a question and its choices atomically. The id is generated in the service so the
-choice statements can reference it inside the same batch, and `db.batch()` gives the whole
-thing one transaction, so a question with no choices cannot exist:
+Writing a question and its choices atomically, as built. The id is generated in the service
+so the choice statements can reference it inside the same batch, and `db.batch()` gives the
+whole thing one transaction, so a question with no choices cannot exist. Every statement
+carries `RETURNING`, so the created question is assembled from the batch's own results
+rather than re-read afterwards:
 
 ```typescript
 export async function createQuestion(input: QuestionInput): Promise<Question> {
   const db = await database();
   const id = newId();
 
-  const statements = [
+  const results = await db.batch([
     db
       .prepare(
-        "INSERT INTO mcq_questions (id, name, question_text, created_by) VALUES (?1, ?2, ?3, ?4)",
+        `INSERT INTO mcq_questions (id, name, question_text, created_by) VALUES (?1, ?2, ?3, ?4) RETURNING ${QUESTION_COLUMNS}`,
       )
-      // created_by is null: there is no session, so no route can know who is acting.
+      // created_by is null: there is no session, so nothing can know who is acting.
       .bind(id, input.name, input.questionText, null),
     ...input.choices.map((choice, position) =>
-      db
-        .prepare(
-          "INSERT INTO mcq_choices (question_id, choice_text, is_correct, position) VALUES (?1, ?2, ?3, ?4)",
-        )
-        .bind(id, choice.text, choice.isCorrect ? 1 : 0, position),
+      insertChoice(db, id, choice, position),
     ),
-  ];
+  ]);
 
-  await db.batch(statements);
-
-  const created = await findQuestionById(id);
-  if (!created) {
+  const row = results[0]?.results[0] as QuestionRow | undefined;
+  if (!row) {
     throw new Error("Question could not be created: the insert returned no row");
   }
-  return created;
+
+  return { ...toQuestionFields(row), choices: choicesFrom(results, 1) };
+}
+```
+
+Replacing the choice set on an edit. The `UPDATE`, the `DELETE` and the new `INSERT`s share
+one batch, so a failure part-way cannot leave the question with its old choices gone and no
+new ones in place. `insertChoice` is the same helper `createQuestion` uses, so create and
+edit cannot drift apart:
+
+```typescript
+const results = await db.batch([
+  db
+    .prepare(
+      `UPDATE mcq_questions SET name = ?1, question_text = ?2, updated_at = CURRENT_TIMESTAMP WHERE id = ?3 RETURNING ${QUESTION_COLUMNS}`,
+    )
+    .bind(input.name, input.questionText, id),
+  db.prepare("DELETE FROM mcq_choices WHERE question_id = ?1").bind(id),
+  ...input.choices.map((choice, position) =>
+    insertChoice(db, id, choice, position),
+  ),
+]);
+```
+
+Giving a test a real database instead of a fake. The injection point is the one
+`user-service.test.ts` established; what changes is that the handle is a real SQLite
+database with the real migrations applied, so the assertions are about rows rather than
+about SQL strings:
+
+```typescript
+const { dbHolder } = vi.hoisted(() => ({
+  dbHolder: { current: null as unknown as LocalD1 },
+}));
+
+vi.mock("@opennextjs/cloudflare", () => ({
+  getCloudflareContext: vi.fn(async () => ({ env: { DB: dbHolder.current } })),
+}));
+
+function createLocalD1() {
+  const db = new DatabaseSync(":memory:");
+  // Plain SQLite defaults foreign keys off; D1 has them on. Without this the cascade and
+  // set-null behavior the schema relies on would not happen here.
+  db.exec("PRAGMA foreign_keys = ON");
+  for (const file of MIGRATIONS) {
+    db.exec(readFileSync(join(process.cwd(), "migrations", file), "utf8"));
+  }
+  // ... prepare/bind/all/run, plus batch() as a real BEGIN/COMMIT/ROLLBACK
 }
 ```
 
@@ -1000,7 +1149,9 @@ if (!choice) {
 const isCorrect = choice.is_correct === 1;
 ```
 
-Reading the list with its choice count, one query rather than one per row:
+Reading the list with its choice count, one query rather than one per row. The `LEFT JOIN`
+keeps a question with no choices in the list with a count of 0, and `rowid` breaks the
+`created_at` tie deterministically, since `CURRENT_TIMESTAMP` only has second precision:
 
 ```sql
 SELECT q.id, q.name, q.question_text, q.created_at, q.updated_at,
@@ -1008,7 +1159,7 @@ SELECT q.id, q.name, q.question_text, q.created_at, q.updated_at,
 FROM mcq_questions q
 LEFT JOIN mcq_choices c ON c.question_id = q.id
 GROUP BY q.id
-ORDER BY q.created_at DESC, q.id DESC
+ORDER BY q.created_at DESC, q.rowid DESC
 ```
 
 In-memory search, the whole of the search feature — no endpoint, no parameter, no refetch:
@@ -1105,7 +1256,13 @@ Recorded deliberately so they are not mistaken for bugs.
 - No `esbuild` dependency; the `node_modules` junction stands instead. Revisited as open
   decision 7, because Phase 4 will destroy it.
 
-### Open decisions for Manikanta, needed before Phase 1
+### Open decisions for Manikanta
+
+Decisions 1 and 3 were settled during Phase 2 and are marked **SETTLED** in place, with what
+was chosen and what it cost, so the reasoning stays readable rather than being deleted.
+Decision 2 is closed by the schema as built, and decision 4 is closed by Phase 1 having
+shipped without the snapshot columns. Decisions 5 to 8 are still open: 5 is wanted before
+Phase 3, 6 and 8 before Phase 4, and 7 before Phase 5.
 
 Listed in the order they bite. Decisions 1 and 2 block Phase 1 and 2; the rest can be
 settled before the phase that needs them, but settling them now is cheaper.
@@ -1147,6 +1304,16 @@ My recommendation is B, and adding one sentence to the Phase 2 section recording
 not literally Wrangler's D1, so the deviation is visible rather than glossed. Confirm, or
 pick A and accept the config churn.
 
+**SETTLED, Aug 31 — option B.** Manikanta asked for a real local D1 rather than mocks, and
+for the database handle to be obtained the way `user-service.test.ts` obtains it. Those two
+instructions pull apart, because that file's handle is a fake: it replays queued rows and
+never executes SQL. Option B satisfies both halves — the injection mechanism is copied from
+`user-service.test.ts` exactly, and what it injects is a real SQLite database built from the
+migration files. No new devDependency, one Vitest config, one suite. The gap that remains is
+D1-specific `batch()` semantics and error formats, and it was narrowed by replaying every
+SQL shape the service issues against real local D1 through `wrangler d1 execute --local`.
+Both are recorded in the Phase 2 section.
+
 **2. Ownership of the id, and the `DEFAULT` that stays unused.** As explained under the
 schema, atomic create requires the service to generate the question id, so
 `DEFAULT (lower(hex(randomblob(16))))` on `mcq_questions` becomes a fallback that this
@@ -1164,6 +1331,13 @@ insert the ones without an `id`, delete the ones no longer present — which pre
 attempt history at the cost of a more involved `updateQuestion` and an optional `id` on the
 `PUT` body. Confirm the diff, or take replace-all and accept that editing a question
 detaches its attempt history.
+
+**SETTLED, Aug 31 — replace-all.** Manikanta asked for `updateQuestion` to replace the
+choice set and for a test proving the old choices are removed rather than orphaned. Built
+that way in Phase 2, inside a single batch with the `UPDATE`. The consequence is accepted
+and pinned by a test rather than left implicit: an attempt whose choice is replaced keeps its
+row and its `is_correct`, and its `choice_id` becomes null. `PUT` bodies therefore carry no
+choice `id`, which simplifies the Phase 3 schema and the Phase 4 form.
 
 **4. Should `mcq_attempts` snapshot the chosen choice text?** Adding `choice_text TEXT` (and
 possibly `question_text`) would make an attempt permanently readable even after its question
@@ -1243,18 +1417,38 @@ beside it, the way Sprint 1's criteria were.
 
 **Service (Phase 2)**
 
-- [ ] `createQuestion` writes the question and every choice in one `db.batch()`, and a
-      failure part-way leaves no question behind
-- [ ] `listQuestions` returns each question with an accurate `choiceCount`
-- [ ] `findQuestionById` returns choices ordered by `position`, and `null` for a missing id
-- [ ] `updateQuestion` changes name, question text, and choices, sets `updated_at`, and
-      returns `null` for a missing id
-- [ ] `deleteQuestion` returns `true` only when a row was actually removed
-- [ ] `recordAttempt` decides correctness by reading the database, never from client input
-- [ ] `recordAttempt` rejects a `choiceId` belonging to a different question
-- [ ] Every statement uses numbered placeholders, with no anonymous `?` and no user input in
-      a template literal, asserted across every executed statement
-- [ ] `.first()` is never used anywhere in the service
+- [x] `createQuestion` writes the question and every choice in one `db.batch()`, and a
+      failure part-way leaves no question behind (a choice violating `NOT NULL` leaves
+      `mcq_questions` and `mcq_choices` at 0 rows; a second test counts exactly 4 INSERTs
+      issued and no follow-up read)
+- [x] `listQuestions` returns each question with an accurate `choiceCount` (3 and 2 for the
+      two fixtures; a question whose choices are deleted reports 0 rather than dropping out
+      of the list)
+- [x] `findQuestionById` returns choices ordered by `position`, and `null` for a missing id
+      (proven by rewriting one choice's position to 9 behind the service's back and watching
+      the order change)
+- [x] `updateQuestion` changes name, question text, and choices, sets `updated_at`, and
+      returns `null` for a missing id (10 tests, including renumbered positions, moving which
+      choice is correct, and writing nothing at all for a missing id)
+- [x] `deleteQuestion` returns `true` only when a row was actually removed (`true` with the
+      row count dropping to 0, `false` for a missing id, and the question's choices and
+      attempts going with it through the cascade)
+- [x] `recordAttempt` decides correctness by reading the database, never from client input
+      (the stored answer is flipped behind the service's back and the verdict follows the
+      database, not the caller)
+- [x] `recordAttempt` rejects a `choiceId` belonging to a different question (throws
+      `ChoiceNotInQuestionError` and writes no attempt row; also rejects a choice id that
+      does not exist at all)
+- [x] Every statement uses numbered placeholders, with no anonymous `?` and no user input in
+      a template literal, asserted across every executed statement (three convention tests
+      run every function, then assert no `?` without a digit, placeholders numbered
+      consecutively from `?1` with a matching binding count, and no quoted literal anywhere
+      in the SQL)
+- [x] `.first()` is never used anywhere in the service (the adapter throws if it is called,
+      so any use fails the suite; a test asserts the guard itself is live)
+- [x] The choice replacement removes the old rows rather than orphaning them (three tests:
+      old ids absent from the whole table, a `LEFT JOIN` finding no parentless choice, and a
+      failed replacement leaving the originals intact)
 
 **API (Phase 3)**
 
@@ -1497,8 +1691,8 @@ These are source files copied into the repository, not packages:
 ## Troubleshooting Guide
 
 Entries are added as problems are hit, with the file and line, per the working agreements.
-The first two were found during Phase 1; the rest are carried forward from Sprint 1 as the
-hazards most likely to recur in this sprint.
+The first two were found during Phase 1 and the next three during Phase 2; the rest are
+carried forward from Sprint 1 as the hazards most likely to recur in this sprint.
 
 ### `npx tsc --noEmit` reports 14 errors, all pre-existing in Sprint 1's auth route tests (found in Phase 1, not fixed)
 **Problem**: `npx tsc --noEmit` exits 1 with 14 errors, all `TS18046: 'body'/'json' is of
@@ -1531,6 +1725,46 @@ failed.
 **Solution**: query them by their own prefix,
 `WHERE type = 'index' AND name LIKE 'idx_mcq%'`, or drop the pattern and filter on
 `tbl_name`. Worth knowing before concluding a migration half-applied.
+
+### `wrangler d1 execute` says it cannot find a D1 database with that name, and then workerd crashes (found in Phase 2, fixed)
+**Problem**: `npx wrangler d1 execute aisprints-quizmaker-db --local --file ...` failed with
+`Couldn't find a D1 DB with the name or binding 'aisprints-quizmaker-db' in your
+wrangler.jsonc file`, immediately followed by
+`Assertion failed: !(handle->flags & UV_HANDLE_CLOSING), file src\win\async.c, line 94` and
+exit code `-1073740791`.
+**Cause**: the database is named `quizmaker-db`, not `aisprints-quizmaker-db` — the
+repository name is not the database name. The crash afterwards is cosmetic: workerd tears
+down uncleanly on Windows after the config error, which makes a simple wrong-name mistake
+look like a broken toolchain.
+**Solution**: take the name from `wrangler.jsonc` rather than from memory —
+`d1_databases[0].database_name` is `quizmaker-db`, with binding `DB`. The binding name works
+in place of the database name too. Ignore the `UV_HANDLE_CLOSING` assertion when it follows a
+real error message; fix the error above it.
+**Code Reference**: `wrangler.jsonc:24`
+
+### `node:sqlite` needs its D1 behaviors verified before being trusted as a stand-in (found in Phase 2, no fix needed)
+**Problem**: the Phase 2 tests give the service a `node:sqlite` database dressed up as D1.
+If any of the D1 behavior the service relies on were unsupported there, the failure would
+show up as a confusing test error rather than as "this approach does not work".
+**Cause**: `node:sqlite` is a thin binding, and the D1 features in play — `?N` numbered
+placeholders bound from varargs, `INSERT ... RETURNING` read through `.all()`, `changes`
+reported by `.run()`, and rollback on an exception inside `BEGIN` — are each plausible to be
+missing or to behave differently.
+**Solution**: all four were confirmed in a throwaway script before the adapter was written,
+and all four work. Worth repeating rather than assuming if the adapter is ever extended, for
+instance to cover a `UNIQUE` violation's message format.
+**Code Reference**: `src/lib/services/mcq-service.test.ts:52`
+
+### Foreign keys silently do nothing in the service tests, so cascades appear broken (found in Phase 2, avoided)
+**Problem**: the same trap Phase 1 hit, in a new place. Without `PRAGMA foreign_keys = ON`,
+the `deleteQuestion` cascade test and the `choice_id` set-null test would both pass while
+proving nothing, because SQLite would not enforce the constraints at all.
+**Cause**: plain SQLite defaults foreign key enforcement off; D1 has it on. A test database
+built by hand does not inherit D1's setting.
+**Solution**: `createLocalD1()` executes the pragma before the migrations, on the same line
+as a comment saying why. If a cascade assertion ever starts passing when it should not,
+check the pragma first.
+**Code Reference**: `src/lib/services/mcq-service.test.ts:55`
 
 ### `npm run preview` fails with "Cannot find package 'esbuild'"
 **Problem**: `npm run preview` dies before bundling with
@@ -1638,30 +1872,40 @@ latest Microsoft Visual C++ Redistributable (x64) and reboot.
 
 ## Current Status
 
-**Last Updated**: Aug 31, 2026 (Phase 1 COMPLETED)
-**Current Phase**: Phase 1 — Schema and Migration, COMPLETED. Phase 2 not started and will
-not start until Manikanta says "go Phase 2".
+**Last Updated**: Aug 31, 2026 (Phase 2 COMPLETED)
+**Current Phase**: Phase 2 — MCQ Service, COMPLETED. Phase 3 not started and will not start
+until Manikanta says "go Phase 3".
 **Branch**: `feature/mcq-crud`, branched from `origin/main` after Sprint 1 merged as
-`1bf5a54`. The only commit on it is `4731310 chore: add phase commit workflow rule`. The
-workflow revision to `phase-commit.mdc` and this PRD, and all of Phase 1, are **uncommitted**
-and awaiting Manikanta's review — nothing has been staged, committed, or pushed.
+`1bf5a54`. Three commits, all pushed:
+- `4731310 chore: add phase commit workflow rule`
+- `ca8e9c0 chore: require approval before staging, committing, pushing, or deploying`
+- `bae47e9 phase 1: add MCQ tables migration and schema tests`
+
+Phase 2's two files are **uncommitted** and awaiting Manikanta's review of the service code —
+nothing has been staged.
 **Status**: The three MCQ tables exist in the local D1 database with the constraints,
-cascades, and indexes this PRD specifies. 233 tests pass in 16 files, lint is clean, and the
-production build succeeds. The cascade and the `is_correct` check were proven against real
-local D1, not only against in-memory SQLite. The remote database has never been touched.
+cascades, and indexes this PRD specifies, and every database call for questions, choices and
+attempts now lives behind `mcq-service.ts`. 283 tests pass in 17 files and lint is clean. The
+service is tested against a real SQLite database built from the migration files, and every
+SQL shape it issues was additionally replayed against real local D1. The remote database has
+never been touched.
 **Known caveat**: `npx tsc --noEmit` reports 14 pre-existing errors in Sprint 1's two auth
-route test files, 0 in anything Phase 1 created. See Troubleshooting for the decision needed.
-**Baseline preserved**: Sprint 1's 156 tests still pass. Phase 1 added 77.
-**Open decisions**: none blocked Phase 1. **Decision 1 — what "a real local D1, not mocks"
-means for the Phase 2 service tests — must be settled before Phase 2 begins.** Decision 6
-(`sonner`) blocks Phase 4. Decision 2 is effectively settled by the schema as written.
-**Next Steps**: Manikanta reviews the Phase 1 diff and the proposed commit, approves or
-amends it, settles open decision 1, then says "go Phase 2".
+route test files, 0 in anything Phase 1 or Phase 2 created. See Troubleshooting for the
+decision needed.
+**Baseline preserved**: Sprint 1's 156 tests still pass. Phase 1 added 77, Phase 2 added 50.
+**Open decisions**: decisions 1 and 3 are now settled and marked as such. Decision 6
+(`sonner`) blocks Phase 4, and decision 7 (`esbuild`) blocks Phase 5. Decisions 4, 5 and 8
+are still open; 5 and 8 are wanted before Phase 3 and Phase 4 respectively, and 4 is now
+effectively closed by Phase 1 having shipped without the snapshot columns.
+**Next Steps**: Manikanta reviews the Phase 2 service code and the proposed commit, approves
+or amends it, then says "go Phase 3". Decision 5 (hiding `isCorrect` behind
+`?include=answers`) is worth settling in the same pass, since Phase 3 implements it.
 
 **Phase Status Summary**:
 
 - Phase 1 — Schema and Migration: COMPLETED (Aug 31, 2026 — 77 tests, applied to local D1)
-- Phase 2 — MCQ Service: PLANNED
+- Phase 2 — MCQ Service: COMPLETED (Aug 31, 2026 — 50 tests against a real SQLite database
+  built from the migrations, plus a real local D1 replay of every SQL shape)
 - Phase 3 — API Routes and Validation: PLANNED
 - Phase 4 — UI and Polish: PLANNED
 - Phase 5 — End-to-End Verification: PLANNED
