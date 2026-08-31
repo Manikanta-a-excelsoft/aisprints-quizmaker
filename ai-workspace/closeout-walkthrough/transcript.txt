@@ -1,0 +1,43 @@
+Live URL: https://aisprints-quizmaker.manikanta-a.workers.dev
+
+=== 1. Empty bank on production ===
+URL: https://aisprints-quizmaker.manikanta-a.workers.dev/mcq
+Heading: "Multiple choice questions"
+Empty-state card shown? false
+    [screenshot 01-empty-bank.png]
+
+=== 2. Create a question with three choices ===
+URL: https://aisprints-quizmaker.manikanta-a.workers.dev/mcq/new
+    [screenshot 02-create-form.png]
+Toast: "Question created"
+Row: Live close-out check | Which gas do plants take in during photosynthesis? | 3
+URL: https://aisprints-quizmaker.manikanta-a.workers.dev/mcq
+    [screenshot 03-list-after-create.png]
+
+=== 3. Attempt it — wrong, then correct ===
+URL: https://aisprints-quizmaker.manikanta-a.workers.dev/mcq/e9c13ba6b78dbdcaa1152ba58cabd132/attempt
+Wrong: "Not quite. The correct answer was “Carbon dioxide”."
+    [screenshot 04-attempt-wrong.png]
+Right: "Correct"
+    [screenshot 05-attempt-right.png]
+Question id: e9c13ba6b78dbdcaa1152ba58cabd132
+
+=== 4. Edit — move the correct mark ===
+URL: https://aisprints-quizmaker.manikanta-a.workers.dev/mcq/e9c13ba6b78dbdcaa1152ba58cabd132/edit
+Name seeded: "Live close-out check"
+Toast: "Question updated"
+Back on: https://aisprints-quizmaker.manikanta-a.workers.dev/mcq
+    [screenshot 06-list-after-edit.png]
+
+=== 5. Delete through the confirmation dialog ===
+Dialog: "Delete this question?"
+    [screenshot 07-delete-dialog.png]
+Toast: "Question deleted"
+Row gone? true
+Empty-state card back? true
+URL: https://aisprints-quizmaker.manikanta-a.workers.dev/mcq
+    [screenshot 08-list-after-delete.png]
+GET /api/mcq after delete: {"questions":[]}
+GET /api/mcq/e9c13ba6b78dbdcaa1152ba58cabd132: 404
+
+=== close-out walkthrough finished cleanly ===

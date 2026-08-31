@@ -1347,7 +1347,7 @@ null. Confirmed in the data too: `attempts_with_user 0`, `questions_with_creator
 
 Nothing was deployed. No `--remote` command was run at any point in Phases 1 to 5.
 
-### Close-out: Remote Migration and Deployment - NOT STARTED, RUNS ONLY ON MANIKANTA'S EXPLICIT INSTRUCTION
+### Close-out: Remote Migration and Deployment - COMPLETED
 
 This is **not** Phase 6 and is not part of the five phases. It is recorded here because the
 sprint is graded on a live URL, so it belongs in the plan rather than appearing from nowhere
@@ -1378,6 +1378,59 @@ resumes the moment it is done.
 **Risks specific to this step**: the remote database has real registered accounts from
 Sprint 1. The migration only adds tables and touches nothing in `users`, which is what makes
 it safe to apply, but that should be re-read at the time rather than trusted from here.
+
+#### What was done (1 Sep 2026)
+
+Manikanta approved the close-out in chat, then approved the remote migration after a
+read-only `migrations list --remote` confirmed only `0002_create_mcq_tables.sql` was pending,
+then approved the deploy.
+
+**Target, re-confirmed before any write**:
+- Account: `Manikanta.a@excelsoftcorp.com's Account` (`7641fe6af28216658c3703e8624b788a`)
+- Database: `quizmaker-db` (`5090552a-6ebc-46b3-97d1-32c5dbb58073`)
+- Worker: `aisprints-quizmaker`
+
+**Remote migration**:
+
+```
+npx wrangler d1 migrations apply quizmaker-db --remote
+```
+
+```
+Resource location: remote
+Migrations to be applied: 0002_create_mcq_tables.sql
+Executed 9 commands in 1.35ms
+0002_create_mcq_tables.sql  ✅
+```
+
+Remote schema after apply: `mcq_questions`, `mcq_choices`, `mcq_attempts`, and all five
+`idx_mcq_*` indexes. `users` still has **7** rows — Sprint 1 accounts were not touched.
+
+**Deploy**:
+
+```
+npm run deploy
+```
+
+```
+Deployed aisprints-quizmaker triggers
+  https://aisprints-quizmaker.manikanta-a.workers.dev
+Current Version ID: ede197ff-2b66-4349-aadd-353cd7a99a67
+```
+
+`env.DB (quizmaker-db)` is bound on the live worker. Full log:
+`ai-workspace/phase5-verification/deploy.log`.
+
+**Live URL**: https://aisprints-quizmaker.manikanta-a.workers.dev
+
+**Production walkthrough** (real Chromium against that URL): create a three-choice question
+named "Live close-out check", attempt it wrong then right, edit which choice is correct,
+delete through the confirmation dialog. Toasts were "Question created", "Question updated",
+"Question deleted". After delete, `GET /api/mcq` returned `{ "questions": [] }` and the
+deleted id returned 404. Evidence is in `ai-workspace/closeout-walkthrough/`.
+
+**Remote D1 after the walk**: `0` questions, `0` choices, `0` attempts, `7` users. The
+verification question was removed so the live bank is empty again.
 
 ---
 
@@ -1851,12 +1904,11 @@ Recorded deliberately so they are not mistaken for bugs.
   fix is described in Troubleshooting and was **not** applied, because it is outside Phase 5's
   brief and needs Manikanta's approval.
 
-- **Verification was done on the local Workers runtime, not on Cloudflare.** `npm run preview`
-  runs the same `workerd` and the same OpenNext bundle that a deploy would, which is why it is
-  a much stronger signal than `next dev`. It is still not the live edge: the D1 is the local
-  sqlite file, not the remote database, and no cold start, region, or real network was
-  exercised. The close-out step re-walks the flow on the live URL, and until it runs, nothing
-  in this document claims the deployed app has been tested.
+- **Verification on the live edge is now done.** Phase 5 proved the feature on local
+  `workerd`. Close-out then applied `0002` remotely, deployed version
+  `ede197ff-2b66-4349-aadd-353cd7a99a67`, and walked create / attempt / edit / delete on
+  https://aisprints-quizmaker.manikanta-a.workers.dev. That walk used the remote D1, not the
+  local sqlite file.
 
 - **The Windows toolchain has two standing warts.** OpenNext prints
   "not fully compatible with Windows" on every build and recommends WSL, and the `esbuild`
@@ -2830,37 +2882,33 @@ that is sequencing rather than a lock workaround.
 
 ## Current Status
 
-**Last Updated**: Aug 31, 2026 (Phase 5 COMPLETED — all five phases done)
-**Current Phase**: Phase 5 — End-to-End Verification, COMPLETED. **All five implementation
-phases are finished.** The only work left in this document is the close-out step, which runs
-only when Manikanta asks for it by name.
+**Last Updated**: 1 Sep 2026 (close-out COMPLETED — sprint live)
+**Current Phase**: Close-out — Remote Migration and Deployment, COMPLETED. All five
+implementation phases and the close-out are finished.
 **Branch**: `feature/mcq-crud`, branched from `origin/main` after Sprint 1 merged as
-`1bf5a54`. Six commits, all pushed:
+`1bf5a54`. Seven commits, all pushed:
 - `4731310 chore: add phase commit workflow rule`
 - `ca8e9c0 chore: require approval before staging, committing, pushing, or deploying`
 - `bae47e9 phase 1: add MCQ tables migration and schema tests`
 - `5d3bb9a phase 2: add MCQ service with real-SQLite tests`
 - `e2b866e phase 3: add MCQ API routes and Zod validation`
 - `7194c1c phase 4: add MCQ UI with search, toasts and confirmation delete`
+- `e8baad6 phase 5: verify the MCQ feature end to end on the Workers runtime`
 
-Phase 5's files are **uncommitted** and awaiting Manikanta's review — nothing has been
-staged. Phase 5 changed no application code; it added
-`ai-workspace/phase5-verification/` and updated this PRD.
-**Status**: The feature is complete and verified on the runtime it will deploy to. The three
-MCQ tables exist in local D1, every database call lives behind `mcq-service.ts`, all six
-endpoints are live and validated, and the UI can create, search, edit, delete and attempt a
-question with the declared polish working. 459 tests pass in 27 files, `npx eslint src
-migrations` is clean, and `npm run build` compiles with every MCQ route in the manifest.
+Close-out documentation and the production walkthrough are **uncommitted** and awaiting
+Manikanta's review — nothing has been staged.
+**Status**: The sprint is live. The three MCQ tables exist on remote D1, the worker is
+deployed, and the same create / attempt / edit / delete flow that Phase 5 walked locally
+has been walked on the production URL.
 
-Phase 5 then took the whole flow through `npm run preview` — the OpenNext bundle on `workerd`
-with D1 bound — in real headless Chromium: create with three choices, see it listed, search
-it, open it, answer wrong, retry correct, edit which choice is correct, then delete through
-the confirmation dialog. Local D1 confirmed all three attempts persisted with the right
-verdicts, and that deleting the question left `0 / 0 / 0` behind with no orphans anywhere in
-the bank. Evidence — 21 screenshots, two transcripts, and the test, build and preview logs —
-is in `ai-workspace/phase5-verification/`.
+**Live URL**: https://aisprints-quizmaker.manikanta-a.workers.dev
+**Deployed version**: `ede197ff-2b66-4349-aadd-353cd7a99a67`
+**Remote D1**: `quizmaker-db` (`5090552a-6ebc-46b3-97d1-32c5dbb58073`), migration
+`0002_create_mcq_tables.sql` applied. After the production walk the bank is empty again
+(`0 / 0 / 0`); Sprint 1's `users` table still has 7 accounts.
 
-The remote database has never been touched and nothing has been deployed.
+459 tests pass in 27 files. Evidence: `ai-workspace/phase5-verification/` (local) and
+`ai-workspace/closeout-walkthrough/` (live).
 **Known caveats**, all recorded in Troubleshooting and none of them fixed, because Phase 5's
 brief was to verify and report rather than change code:
 1. `npx tsc --noEmit` reports the same 14 pre-existing errors in Sprint 1's two auth route
@@ -2883,14 +2931,12 @@ evidence). Phase 5 added nothing and ran no `npm install`.
 sharpened 4 — every edit nulls that question's attempt `choice_id`s, not just an unlucky one,
 so the text-snapshot option is worth a real answer before a future sprint reports on attempts.
 5, 6 and 8 are settled and confirmed by the walkthroughs. **Decision 7 (`esbuild`) is still
-open** but no longer blocking: the junction survived Phase 5 because no `npm install` ran, and
-`npm run preview` started first time. It stays a trap for the close-out, since a deploy runs
-the same OpenNext build.
-**Next Steps**: Manikanta reads the Phase 5 verification and this PRD diff, then approves or
-amends the Phase 5 commit. Three things want an answer in the same pass: the `.wrangler`
-lint-ignore line, the `act()` warnings, and decision 7. The close-out — remote migration and
-deploy — happens only when he asks for it by name, with each of the two dangerous commands
-confirmed individually.
+open** but did not block the close-out: no `npm install` ran, the junction was intact, and
+`npm run deploy` succeeded. It remains a trap for the next install.
+**Next Steps**: none for this sprint. The close-out commit is proposed and waiting on
+Manikanta. Decision 7 (`esbuild` junction) and the two lint/test nits from Phase 5 are
+still open and can wait for a later cleanup. The natural first task of the next sprint is
+real session management.
 
 **Phase Status Summary**:
 
@@ -2905,4 +2951,25 @@ confirmed individually.
   the whole flow walked on `workerd` via `npm run preview` with 21 screenshots, local D1
   proving attempt persistence and a clean cascade, and three issues reported rather than
   quietly fixed)
-- Close-out — Remote Migration and Deployment: NOT STARTED, requires explicit instruction
+- Close-out — Remote Migration and Deployment: COMPLETED (1 Sep 2026 — `0002` applied
+  remotely, deployed as `ede197ff-2b66-4349-aadd-353cd7a99a67` at
+  https://aisprints-quizmaker.manikanta-a.workers.dev, production flow walked and cleaned up)
+
+---
+
+## Closing note
+
+**What shipped.** Teachers can create, list, search, edit, delete, and attempt multiple-choice
+questions on the live worker. A question has a short name, the question text, and two to six
+choices with exactly one marked correct. Attempts are recorded in D1. The UI has in-memory
+search, an empty state, row-action menus, delete confirmation, toasts, and loading skeletons.
+The form and the API share one Zod schema. `created_by` and `user_id` exist as nullable
+columns and stay null.
+
+**What we are intentionally leaving for next sprint.** Session management — cookies, tokens,
+middleware, ownership, and any "my questions" or "my attempts" view. Until that lands,
+`/mcq` is reachable by URL, every question is editable by anyone who reaches it, and
+attempts cannot be attributed. Also left: snapshotting chosen-answer text so edits do not
+null `choice_id` on older attempts (decision 4), adding `esbuild` as a real dependency
+(decision 7), ignoring `.wrangler/**` in ESLint, and the `act()` warnings in the list page
+test. None of those are bugs in what shipped; they are the next sprint's starting list.
