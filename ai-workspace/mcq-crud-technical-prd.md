@@ -1,12 +1,13 @@
 Date created: Aug 31, 2026
-Date last modified: Aug 31, 2026 (Phase 2 COMPLETED — `mcq-service.ts` owns every database
-call for questions, choices and attempts, proven by 50 tests against a real SQLite database
-built from the migration files. Open decisions 1 and 3 settled: real SQLite through
-`node:sqlite` rather than a fake, and replace-all editing rather than a choice diff. Phase 1
-COMPLETED earlier the same day — the three MCQ tables applied to local D1, proven by 77
-tests. Revised before that so every commit, push, remote migration, and deploy is proposed
-and waits for Manikanta's explicit approval rather than happening on the agent's own
-initiative.)
+Date last modified: Aug 31, 2026 (Phase 3 COMPLETED — all six endpoints live under
+`src/app/api/mcq/` with Zod validation shared with the Phase 4 form, proven by 86 tests and
+by a curl run covering every documented status code against real local D1. The `PUT` endpoint
+docs and the choice schema were corrected to match replace-all editing. Phase 2 COMPLETED
+earlier the same day — `mcq-service.ts` owns every database call, proven by 50 tests against
+a real SQLite database built from the migration files, settling open decisions 1 and 3. Phase
+1 COMPLETED before that — the three MCQ tables applied to local D1, proven by 77 tests.
+Revised at the start so every commit, push, remote migration, and deploy is proposed and
+waits for Manikanta's explicit approval rather than happening on the agent's own initiative.)
 
 # MCQ CRUD and Attempts - Technical PRD
 
@@ -402,25 +403,33 @@ Read one question with its choices.
 
 #### PUT /api/mcq/[id]
 
-Replace a question's name, text, and choice list. Same body as `POST /api/mcq`, plus an
-optional `id` on each choice so an existing choice can be updated in place rather than
-replaced.
+Replace a question's name, text, and choice list. Body is identical to `POST /api/mcq`.
 
 **Request Body:**
 ```json
 {
   "name": "Capital of France",
-  "questionText": "Which city is the capital of France?",
+  "questionText": "What is the capital of France?",
   "choices": [
-    { "id": "1a4b…", "text": "Paris", "isCorrect": true },
-    { "id": "2b5c…", "text": "Lyon", "isCorrect": false },
+    { "text": "Paris", "isCorrect": true },
     { "text": "Nice", "isCorrect": false }
   ]
 }
 ```
 
-A choice with an `id` is updated. A choice without one is inserted. A choice previously
-stored and absent from the array is deleted. See open decision 3.
+**Changed from the original plan.** The plan had an optional `id` on each choice, so an
+existing choice could be updated in place and the endpoint would diff the list. Decision 3
+was settled as replace-all, so there is no `id` to send: the whole choice set is replaced and
+new ids are issued. A client that sends one is not rejected — the schema strips it, the same
+way it strips `position` — so no caller breaks over a field that no longer means anything.
+
+Confirmed against the running server: a question created with three choices and then updated
+with two came back with two choices, new ids, and positions renumbered from 0.
+
+The consequence is visible in the response and is the accepted cost of decision 3. In the
+Phase 3 curl run, the "Paris" choice id changed from `dfd5829362efded2c2ea22419bc769ed` to
+`c14127cc75b1261223cb406432c335cc` across one edit. Any attempt pointing at the old id keeps
+its row and its `isCorrect`, with `choice_id` set to null.
 
 **Response:**
 - Success (200): `{ "question": { … } }`, the same full shape `POST` returns, including
@@ -480,32 +489,39 @@ the default `GET`. `userId` is `null` this sprint.
 `src/lib/validation/mcq.ts`, following `src/lib/validation/auth.ts`: schemas exported for
 both the routes and the form, plus the shared error flattener.
 
+As built. Two changes from the plan, both found by the tests and both marked inline:
+
 ```typescript
 import { z } from "zod";
 
 export const choiceInputSchema = z.object({
-  id: z.string().trim().min(1).optional(),
+  // CHANGED: no optional `id`. Decision 3 settled as replace-all, so a choice id carries no
+  // meaning on the way in. A client that sends one has it stripped, like `position`.
+  //
+  // CHANGED: the message is on the type as well as the length check. A field that arrives
+  // missing is a different Zod issue from one that arrives empty, and Zod's own wording for
+  // the first ("expected string, received undefined") is not something to show a person.
   text: z
-    .string()
+    .string({ error: "Choice text is required" })
     .trim()
     .min(1, "Choice text is required")
     .max(500, "A choice must be at most 500 characters"),
-  isCorrect: z.boolean(),
+  isCorrect: z.boolean({ error: "Mark whether this choice is the correct answer" }),
 });
 
 export const questionInputSchema = z.object({
   name: z
-    .string()
+    .string({ error: "Name is required" })
     .trim()
     .min(1, "Name is required")
     .max(100, "Name must be at most 100 characters"),
   questionText: z
-    .string()
+    .string({ error: "Question text is required" })
     .trim()
     .min(1, "Question text is required")
     .max(1000, "Question text must be at most 1000 characters"),
   choices: z
-    .array(choiceInputSchema)
+    .array(choiceInputSchema, { error: "Add at least two choices" })
     .min(2, "Add at least two choices")
     .max(6, "A question can have at most six choices")
     .refine((choices) => choices.filter((c) => c.isCorrect).length === 1, {
@@ -514,13 +530,20 @@ export const questionInputSchema = z.object({
 });
 
 export const attemptInputSchema = z.object({
-  choiceId: z.string().trim().min(1, "Select an answer"),
+  choiceId: z
+    .string({ error: "Select an answer" })
+    .trim()
+    .min(1, "Select an answer"),
 });
 
 export type ChoiceInput = z.infer<typeof choiceInputSchema>;
 export type QuestionInput = z.infer<typeof questionInputSchema>;
 export type AttemptInput = z.infer<typeof attemptInputSchema>;
 ```
+
+The type-level messages are what make `POST /api/mcq` with `{}` answer
+`{"name":"Name is required","questionText":"Question text is required","choices":"Add at
+least two choices"}` rather than three sentences about expected types. Verified by curl.
 
 **On `fieldErrors()`.** `auth.ts` already exports `fieldErrors()`, which keys messages by
 `issue.path[0]`. That is right for flat forms and wrong here: an error on the second
@@ -539,8 +562,13 @@ export function pathErrors(error: z.ZodError): Record<string, string> {
   const fields: Record<string, string> = {};
 
   for (const issue of error.issues) {
-    const key = issue.path.join(".");
-    if (key && !(key in fields)) {
+    // CHANGED: an issue with no path means the body itself was the wrong shape — a JSON
+    // string or array where an object was expected. The planned version skipped those,
+    // which would have answered `{"error":"Validation failed","fields":{}}` and told the
+    // caller nothing. Reporting them under `body` reuses the key the malformed-JSON branch
+    // already returns, so one envelope covers both.
+    const key = issue.path.length === 0 ? "body" : issue.path.join(".");
+    if (!(key in fields)) {
       fields[key] = issue.message;
     }
   }
@@ -548,6 +576,10 @@ export function pathErrors(error: z.ZodError): Record<string, string> {
   return fields;
 }
 ```
+
+A test proves the reason this exists rather than reusing `fieldErrors()`: given two choices
+that are both blank, `pathErrors` produces `choices.0.text` and `choices.1.text`, while
+`fieldErrors` collapses both onto a single `choices` key.
 
 The form maps `choices.<n>.text` back to the right input; the flat keys (`name`,
 `questionText`, `choices`) render exactly as the auth forms render theirs.
@@ -889,7 +921,7 @@ still logged under Troubleshooting.
 
 **Not in this phase**: no HTTP handlers, no Zod schemas, no UI.
 
-### Phase 3: API Routes and Validation - PLANNED
+### Phase 3: API Routes and Validation - COMPLETED
 
 **Objective**: The six endpoints behave exactly as specified above, including every status
 code, with validation shared with the Phase 4 form.
@@ -899,11 +931,98 @@ code, with validation shared with the Phase 4 form.
    file, covering every documented status code and every validation message. Mock the
    service with `importOriginal`, as Sprint 1's route tests do, so the real error classes
    and the real `toPublicQuestion` are exercised. Mock `@opennextjs/cloudflare` to throw, so
-   a route test that reaches a binding fails loudly. Paste the failing run.
-2. **Green**: implement `src/lib/validation/mcq.ts` and the five route files.
+   a route test that reaches a binding fails loudly. Paste the failing run. **Done.**
+2. **Green**: implement `src/lib/validation/mcq.ts` and the four route files. **Done.**
 3. Verify by hand with `curl.exe` against `npm run dev` on the real local D1, and record the
-   commands in this PRD as Sprint 1 did.
-4. Update this PRD, then propose the commit and wait for approval.
+   commands in this PRD as Sprint 1 did. **Done.**
+4. Update this PRD, then propose the commit and wait for approval. **Done.**
+
+**What was built**
+
+Four test files, 86 tests, all written before any implementation existed. The failing run was
+four collection failures for the right reason — `Cannot find module` for `./mcq` and for each
+of the three `./route` files, 0 tests collected.
+
+`src/lib/validation/mcq.ts` holds `choiceInputSchema`, `questionInputSchema`,
+`attemptInputSchema`, the three inferred types, and `pathErrors()`. `fieldErrors()` in
+`auth.ts` was not touched, so no auth behavior changed and Sprint 1's auth tests still pass.
+
+The three route files follow `register/route.ts` line for line on the two shared failure
+paths: `await request.json()` inside `try`/`catch` answering
+`{ error: "Validation failed", fields: { body: "Expected a JSON object" } }`, then
+`safeParse` answering `{ error: "Validation failed", fields: … }`. Both are written out in
+each handler rather than factored into a helper, because that is how the auth routes read and
+the point of the instruction was that the two APIs look alike.
+
+**Route params are a promise.** On Next 16, a dynamic route handler receives
+`{ params: Promise<{ id: string }> }`, so every `[id]` handler starts with
+`const { id } = await params`. The tests hand the handler `{ params: Promise.resolve({ id }) }`
+so they exercise the same shape rather than a simplification of it.
+
+**Validation runs before the id is used.** In `PUT`, the body is parsed before
+`updateQuestion` is called, so an invalid body is a 400 whether or not the question exists. A
+test pins this: a malformed body sent to a missing id is a 400, not a 404, and the service is
+never called.
+
+**Two changes from the plan, both found by a failing test:**
+
+- **Zod messages had to be attached to the type, not only the length check.** Writing
+  `z.string().trim().min(1, "Select an answer")` gives that message for `""` but not for a
+  missing field, which produces Zod's own `expected string, received undefined`. That is
+  exactly the case that matters — someone submitting an attempt without choosing — so every
+  string and the choices array now carry a message on the type as well. Two tests failed on
+  this and drove the fix; the details are in Troubleshooting.
+- **`pathErrors()` reports a path-less issue under `body`.** The planned version skipped
+  issues whose path is empty, which would have answered `fields: {}` for a body that is a
+  JSON string or array. Reporting it under `body` reuses the key the malformed-JSON branch
+  already uses.
+
+**One thing deliberately left as planned**: `GET /api/mcq/[id]` hides `isCorrect` unless
+`?include=answers` is passed. Open decision 5 is still formally yours, and this is the PRD's
+documented default rather than a new choice. It is worth a decision because with no
+authentication anyone can pass the parameter, so it is tidiness and not a security boundary —
+but the edit form does need the answers, so something like it has to exist.
+
+**Test coverage, 86 tests**: schemas and `pathErrors` (35), the collection route (21), the
+individual-question route (22), and attempts (18).
+
+Three cross-cutting properties are asserted in every route file rather than assumed:
+- **No 500 body carries the underlying error.** Each route is made to fail with
+  `D1_ERROR: database is locked` and the serialised response is checked not to contain
+  `D1_ERROR`.
+- **No handler logs the request body.** `console.error` is spied on, the service is made to
+  fail, and the captured log arguments are asserted not to contain the question name, the
+  choice text, or the choice id.
+- **No test can reach a binding.** `@opennextjs/cloudflare` is mocked to throw
+  `A route test must not reach Cloudflare bindings`, so a route that reads `env.DB` directly
+  instead of going through the service fails loudly.
+
+The attempts route additionally proves the client cannot influence the verdict: sending
+`isCorrect: true` or a `userId` alongside `choiceId` changes nothing, because the handler
+forwards only `(id, choiceId)` — asserted with `toHaveBeenCalledWith`.
+
+**Results**
+
+```
+ Test Files  4 passed (4)
+      Tests  86 passed (86)
+```
+
+Full suite after the phase: **21 files, 369 tests, all passing**, up from 17 files and 283
+tests at the end of Phase 2. `npm run lint` clean. `npx tsc --noEmit` reports no error in any
+of the six new files.
+
+**Verified by curl against `npm run dev`**
+
+The full transcript is in the Curl Verification section below. Every documented status code
+was produced by the real routes against the real local D1: 201 on create, 200 on list, read,
+update and delete, 201 on both a correct and an incorrect attempt, 400 on malformed JSON,
+missing fields, one choice, two correct choices and a blank choice, 404 on a missing id for
+`GET`, `PUT`, `DELETE` and attempts, and 400 on a choice from another question.
+
+Local D1 was left as it was found: after the run, `mcq_questions`, `mcq_choices` and
+`mcq_attempts` are all at 0 rows, which also demonstrated the cascade once more — the two
+attempts recorded during the run went with their question.
 
 **Deliverables**:
 - `src/lib/validation/mcq.ts` with `questionInputSchema`, `attemptInputSchema`, `pathErrors`
@@ -1016,9 +1135,220 @@ it safe to apply, but that should be re-read at the time rather than trusted fro
 
 ---
 
+## Manual API Verification
+
+Run at the end of Phase 3 against `npm run dev` on the real local D1. Real requests, real
+responses, trimmed only of repetition. Ids are the actual ones from the run.
+
+**Windows PowerShell.** `curl` is an alias for `Invoke-WebRequest`, so call `curl.exe`.
+Bodies with spaces go in a file and are passed as `-d "@path"` rather than inline, per the
+Sprint 1 note. Two PowerShell traps were hit while scripting this and are recorded in
+Troubleshooting: `?` in a double-quoted URL, and `-o $null`.
+
+### Create — 201
+
+```
+$ curl.exe -s -X POST http://localhost:3000/api/mcq -H "content-type: application/json" -d "@c1.json"
+```
+```json
+{"question":{"id":"b7b5423fd88108e3742d66819279f3b8","name":"Capital of France",
+"questionText":"Which city is the capital of France?","createdBy":null,
+"createdAt":"2026-08-31 15:59:11","updatedAt":"2026-08-31 15:59:11","choices":[
+{"id":"dfd5829362efded2c2ea22419bc769ed","questionId":"b7b5423fd88108e3742d66819279f3b8","text":"Paris","isCorrect":true,"position":0,"createdAt":"2026-08-31 15:59:11"},
+{"id":"4bec311159d4e6626f3ba3ce8ad34079","questionId":"b7b5423fd88108e3742d66819279f3b8","text":"Lyon","isCorrect":false,"position":1,"createdAt":"2026-08-31 15:59:11"},
+{"id":"881ed0088400d2d9356462455064b5d3","questionId":"b7b5423fd88108e3742d66819279f3b8","text":"Marseille","isCorrect":false,"position":2,"createdAt":"2026-08-31 15:59:11"}]}}
+-- HTTP 201
+```
+
+`createdBy` is null, as it will be for every response this sprint. Positions were assigned
+from the array order, not sent by the client.
+
+### List — 200
+
+```
+$ curl.exe -s http://localhost:3000/api/mcq
+```
+```json
+{"questions":[
+{"id":"149d808545e73116b996c61ade28b14c","name":"Largest planet","questionText":"Which is the largest planet in the solar system?","choiceCount":2,"createdAt":"2026-08-31 15:59:12","updatedAt":"2026-08-31 15:59:12"},
+{"id":"b7b5423fd88108e3742d66819279f3b8","name":"Capital of France","questionText":"Which city is the capital of France?","choiceCount":3,"createdAt":"2026-08-31 15:59:11","updatedAt":"2026-08-31 15:59:11"}]}
+-- HTTP 200
+```
+
+Newest first, accurate choice counts, and no choice text or answers in a summary.
+
+### Read, answers hidden then shown — 200
+
+```
+$ curl.exe -s http://localhost:3000/api/mcq/149d808545e73116b996c61ade28b14c
+```
+```json
+{"question":{ … "choices":[
+{"id":"09cff3c81d942f95bcf07687e64eb061","questionId":"149d…","text":"Jupiter","position":0,"createdAt":"2026-08-31 15:59:12"},
+{"id":"904cd1a124587785e2bfe3e55512cc73","questionId":"149d…","text":"Earth","position":1,"createdAt":"2026-08-31 15:59:12"}]}}
+-- HTTP 200
+```
+
+```
+$ curl.exe -s "http://localhost:3000/api/mcq/149d808545e73116b996c61ade28b14c?include=answers"
+```
+```json
+{"question":{ … "choices":[
+{"id":"09cff3c81d942f95bcf07687e64eb061", … "text":"Jupiter","isCorrect":true,"position":0, … },
+{"id":"904cd1a124587785e2bfe3e55512cc73", … "text":"Earth","isCorrect":false,"position":1, … }]}}
+-- HTTP 200
+```
+
+No `isCorrect` key at all by default; present only when asked for.
+
+### Update, three choices replaced by two — 200
+
+```
+$ curl.exe -s -X PUT http://localhost:3000/api/mcq/b7b5423fd88108e3742d66819279f3b8 -H "content-type: application/json" -d "@u1.json"
+```
+```json
+{"question":{"id":"b7b5423fd88108e3742d66819279f3b8","name":"Capital city of France",
+"questionText":"What is the capital of France?","createdBy":null,
+"createdAt":"2026-08-31 15:59:11","updatedAt":"2026-08-31 15:59:14","choices":[
+{"id":"c14127cc75b1261223cb406432c335cc", … "text":"Paris","isCorrect":true,"position":0,"createdAt":"2026-08-31 15:59:14"},
+{"id":"43752c2360d439941dd67758a9f5b361", … "text":"Nice","isCorrect":false,"position":1,"createdAt":"2026-08-31 15:59:14"}]}}
+-- HTTP 200
+```
+
+`updatedAt` moved from `15:59:11` to `15:59:14` while `createdAt` did not. The Paris choice
+id changed from `dfd5829362efded2c2ea22419bc769ed` to `c14127cc75b1261223cb406432c335cc`,
+which is replace-all working as decision 3 accepted.
+
+### Attempt, correct then incorrect — 201
+
+```
+$ curl.exe -s -X POST http://localhost:3000/api/mcq/b7b5423fd88108e3742d66819279f3b8/attempts -H "content-type: application/json" -d "@a1.json"
+```
+```json
+{"attempt":{"id":"0d525459557037a387d435ef90a8db22","questionId":"b7b5…","userId":null,
+"choiceId":"c14127cc75b1261223cb406432c335cc","isCorrect":true,"createdAt":"2026-08-31 15:59:16"},
+"correctChoiceId":"c14127cc75b1261223cb406432c335cc"}
+-- HTTP 201
+```
+
+```
+$ curl.exe -s -X POST http://localhost:3000/api/mcq/b7b5423fd88108e3742d66819279f3b8/attempts -H "content-type: application/json" -d "@a2.json"
+```
+```json
+{"attempt":{"id":"cda7b4a061ce295418e7d9d7b0e925a5","questionId":"b7b5…","userId":null,
+"choiceId":"43752c2360d439941dd67758a9f5b361","isCorrect":false,"createdAt":"2026-08-31 15:59:17"},
+"correctChoiceId":"c14127cc75b1261223cb406432c335cc"}
+-- HTTP 201
+```
+
+The wrong answer still names the right one, which is what the attempt page needs. `userId` is
+null in both.
+
+### Delete, and proof it was real — 200 then 404
+
+```
+$ curl.exe -s -X DELETE http://localhost:3000/api/mcq/b7b5423fd88108e3742d66819279f3b8
+{"success":true}
+-- HTTP 200
+
+$ curl.exe -s http://localhost:3000/api/mcq/b7b5423fd88108e3742d66819279f3b8
+{"error":"Question not found"}
+-- HTTP 404
+```
+
+### Failure cases
+
+Malformed JSON — 400:
+```
+$ curl.exe -s -X POST http://localhost:3000/api/mcq -H "content-type: application/json" --data-raw "{ not json"
+{"error":"Validation failed","fields":{"body":"Expected a JSON object"}}
+-- HTTP 400
+```
+
+Missing fields, empty object — 400, every field named at once:
+```
+$ curl.exe -s -X POST http://localhost:3000/api/mcq -H "content-type: application/json" -d "{}"
+{"error":"Validation failed","fields":{"name":"Name is required","questionText":"Question text is required","choices":"Add at least two choices"}}
+-- HTTP 400
+```
+
+Only one choice — 400:
+```
+{"error":"Validation failed","fields":{"choices":"Add at least two choices"}}
+-- HTTP 400
+```
+
+Two choices both marked correct — 400:
+```
+{"error":"Validation failed","fields":{"choices":"Mark exactly one choice as the correct answer"}}
+-- HTTP 400
+```
+
+A blank choice, addressed by its position — 400. This is what `pathErrors()` exists for:
+```
+{"error":"Validation failed","fields":{"choices.1.text":"Choice text is required"}}
+-- HTTP 400
+```
+
+A question id that does not exist — 404 on all three verbs:
+```
+$ curl.exe -s http://localhost:3000/api/mcq/does-not-exist
+{"error":"Question not found"}
+-- HTTP 404
+
+$ curl.exe -s -X PUT http://localhost:3000/api/mcq/does-not-exist -H "content-type: application/json" -d "@u1.json"
+{"error":"Question not found"}
+-- HTTP 404
+
+$ curl.exe -s -X DELETE http://localhost:3000/api/mcq/does-not-exist
+{"error":"Question not found"}
+-- HTTP 404
+```
+
+An attempt using a choice from a different question — 400, not 500. The question under
+attempt was `b7b5423f…` and the choice belonged to `149d8085…`:
+```
+$ curl.exe -s -X POST http://localhost:3000/api/mcq/b7b5423fd88108e3742d66819279f3b8/attempts -H "content-type: application/json" -d "@a3.json"
+{"error":"That choice does not belong to this question"}
+-- HTTP 400
+```
+
+An attempt with nothing selected — 400:
+```
+{"error":"Validation failed","fields":{"choiceId":"Select an answer"}}
+-- HTTP 400
+```
+
+An attempt on a question that does not exist — 404, distinguished from the 400 above:
+```
+$ curl.exe -s -X POST http://localhost:3000/api/mcq/does-not-exist/attempts -H "content-type: application/json" -d "@a1.json"
+{"error":"Question not found"}
+-- HTTP 404
+```
+
+### Local D1 left as it was found
+
+```
+$ npx wrangler d1 execute quizmaker-db --local --command "SELECT (SELECT COUNT(*) FROM mcq_questions) AS questions, (SELECT COUNT(*) FROM mcq_choices) AS choices, (SELECT COUNT(*) FROM mcq_attempts) AS attempts"
+```
+```json
+{ "questions": 0, "choices": 0, "attempts": 0 }
+```
+
+Both questions were deleted at the end of the run. The two attempts recorded against the
+first one went with it through the cascade, so the count is 0 without any attempt row having
+been deleted directly.
+
+**Honest limits of this verification**: this was `curl.exe` against `npm run dev`, which runs
+on Node with a local D1 binding, not on workerd. It proves the routes, the schemas and the
+SQL, but it does not prove the app runs on the Workers runtime. Phase 5's `npm run preview`
+is the check that does.
+
+---
+
 ## Technical Implementation Details
 
-Filled in as each phase lands. Phases 1 and 2 are a record of built code; Phases 3 to 5 are
+Filled in as each phase lands. Phases 1 to 3 are a record of built code; Phases 4 and 5 are
 still the plan.
 
 ### Key Files
@@ -1036,11 +1366,13 @@ Delivered in Phase 2:
 - `src/lib/services/mcq-service.test.ts` — 50 tests against a real SQLite database built
   from the migration files, including the `createLocalD1` adapter
 
-Planned for Phase 3:
+Delivered in Phase 3:
 
 - `src/lib/validation/mcq.ts` — Zod schemas plus `pathErrors()`, shared with the Phase 4 form
-- `src/app/api/mcq/route.ts`, `src/app/api/mcq/[id]/route.ts`,
-  `src/app/api/mcq/[id]/attempts/route.ts`, and a `route.test.ts` beside each
+- `src/lib/validation/mcq.test.ts` — 35 tests
+- `src/app/api/mcq/route.ts` — `GET`, `POST`, with `route.test.ts`, 21 tests
+- `src/app/api/mcq/[id]/route.ts` — `GET`, `PUT`, `DELETE`, with `route.test.ts`, 22 tests
+- `src/app/api/mcq/[id]/attempts/route.ts` — `POST`, with `route.test.ts`, 18 tests
 
 Planned for Phase 4:
 
@@ -1355,6 +1687,13 @@ parameter, so this is neatness rather than security, and it costs a branch in th
 document the leak, or to add a separate attempt-facing endpoint. Confirm the query
 parameter, or pick one of those.
 
+**BUILT AS SPECIFIED IN PHASE 3, BUT STILL YOURS TO CONFIRM.** Phase 3 implemented the query
+parameter because it was the PRD's documented default and Phase 4's edit form needs the
+answers from somewhere. Nothing about that reading is new, and changing it later is a small
+edit to one branch in `src/app/api/mcq/[id]/route.ts` plus its tests. Two things to weigh: the
+parameter is not a security boundary, since anyone can pass it; and the `PUT` response returns
+answers unconditionally, because its only caller is the edit form.
+
 **6. `sonner` as a dependency — needs approval.** The toasts you asked for come from
 `npx shadcn@latest add @shadcn/sonner`, which installs the `sonner` npm package. `AGENTS.md`
 requires proposing a dependency and saying why, so: it is the shadcn-sanctioned toast for
@@ -1452,24 +1791,40 @@ beside it, the way Sprint 1's criteria were.
 
 **API (Phase 3)**
 
-- [ ] `GET /api/mcq` returns every question with its choice count, and `{ "questions": [] }`
-      for an empty bank
-- [ ] `POST /api/mcq` returns 201 with the created question and its choices
-- [ ] `POST /api/mcq` returns 400 with a per-field message for a missing name, an
+- [x] `GET /api/mcq` returns every question with its choice count, and `{ "questions": [] }`
+      for an empty bank (both asserted in tests and both seen by curl — the empty case at the
+      end of the run)
+- [x] `POST /api/mcq` returns 201 with the created question and its choices (curl returned
+      201 with three choices at positions 0, 1, 2)
+- [x] `POST /api/mcq` returns 400 with a per-field message for a missing name, an
       over-length name, missing question text, an empty choice, fewer than two choices,
-      more than six choices, no correct choice, and two correct choices
-- [ ] `GET /api/mcq/[id]` returns 200 without `isCorrect`, and 404 for a missing id
-- [ ] `GET /api/mcq/[id]?include=answers` returns `isCorrect` on each choice
-- [ ] `PUT /api/mcq/[id]` returns 200 with the updated question, 400 for invalid input, and
-      404 for a missing id
-- [ ] `DELETE /api/mcq/[id]` returns 200, and 404 for a missing id
-- [ ] `POST /api/mcq/[id]/attempts` returns 201 with the attempt, its `isCorrect`, and
-      `correctChoiceId`
-- [ ] `POST /api/mcq/[id]/attempts` returns 400 for a missing `choiceId` and for a choice
-      belonging to another question
-- [ ] Every handler validates its body with a Zod schema before use
+      more than six choices, no correct choice, and two correct choices (all eight covered by
+      tests; five of them re-checked by curl, including `choices.1.text` for the blank choice)
+- [x] `GET /api/mcq/[id]` returns 200 without `isCorrect`, and 404 for a missing id (curl
+      body contains no `isCorrect` key at all; `does-not-exist` returned 404)
+- [x] `GET /api/mcq/[id]?include=answers` returns `isCorrect` on each choice (curl returned
+      `isCorrect` true then false on the two choices)
+- [x] `PUT /api/mcq/[id]` returns 200 with the updated question, 400 for invalid input, and
+      404 for a missing id (all three by curl; a test also pins that an invalid body sent to
+      a missing id is a 400 and not a 404)
+- [x] `DELETE /api/mcq/[id]` returns 200, and 404 for a missing id (curl returned
+      `{"success":true}` then 404 on the same id afterwards)
+- [x] `POST /api/mcq/[id]/attempts` returns 201 with the attempt, its `isCorrect`, and
+      `correctChoiceId` (curl returned 201 for a correct and an incorrect answer, the second
+      still naming the right choice)
+- [x] `POST /api/mcq/[id]/attempts` returns 400 for a missing `choiceId` and for a choice
+      belonging to another question (`Select an answer` and `That choice does not belong to
+      this question`, both by curl; a missing question is a 404, kept distinct)
+- [x] Every handler validates its body with a Zod schema before use (and in `PUT`, before the
+      id is used at all, so a bad body cannot be reported as a 404)
 - [ ] The form and the API enforce the same rules, because they import the same schema
-- [ ] No 500 response body contains an underlying error message
+      (schema exported and ready; the form arrives in Phase 4, so this is ticked there)
+- [x] No 500 response body contains an underlying error message (each route forced to fail
+      with `D1_ERROR: database is locked`, and the serialised body asserted not to contain
+      `D1_ERROR`)
+- [x] No handler writes a request body to the logs (`console.error` spied on in all three
+      route files, and the captured arguments asserted not to contain the question name, the
+      choice text, or the choice id)
 
 **UI (Phase 4)**
 
@@ -1691,8 +2046,9 @@ These are source files copied into the repository, not packages:
 ## Troubleshooting Guide
 
 Entries are added as problems are hit, with the file and line, per the working agreements.
-The first two were found during Phase 1 and the next three during Phase 2; the rest are
-carried forward from Sprint 1 as the hazards most likely to recur in this sprint.
+The first two were found during Phase 1, the next three during Phase 2, and the two after
+those during Phase 3; the rest are carried forward from Sprint 1 as the hazards most likely
+to recur in this sprint.
 
 ### `npx tsc --noEmit` reports 14 errors, all pre-existing in Sprint 1's auth route tests (found in Phase 1, not fixed)
 **Problem**: `npx tsc --noEmit` exits 1 with 14 errors, all `TS18046: 'body'/'json' is of
@@ -1765,6 +2121,38 @@ built by hand does not inherit D1's setting.
 as a comment saying why. If a cascade assertion ever starts passing when it should not,
 check the pragma first.
 **Code Reference**: `src/lib/services/mcq-service.test.ts:55`
+
+### A Zod message set with `.min(1, "…")` does not appear when the field is missing (found in Phase 3, fixed)
+**Problem**: two tests failed with `expected string, received undefined` where they expected
+`Select an answer`. `POST /api/mcq/[id]/attempts` with `{}` answered
+`{"choiceId":"Invalid input: expected string, received undefined"}`.
+**Cause**: `z.string().trim().min(1, "Select an answer")` attaches the message to the length
+check, which only runs once the value is known to be a string. A missing field fails the type
+check first, and that check had no message, so Zod's own wording was returned. This is exactly
+the case that matters most — someone submitting without choosing an answer.
+**Solution**: put the message on the type as well as the check —
+`z.string({ error: "Select an answer" }).trim().min(1, "Select an answer")`. Applied to
+`name`, `questionText`, `choice.text`, `choiceId`, `isCorrect`, and the `choices` array. The
+per-check messages still win where they apply, so `min(2)` and `max(6)` on `choices` are
+unaffected, which the schema tests confirm.
+**Worth knowing**: any new field needs the message in both places, or a missing value will
+leak Zod's wording into the UI.
+**Code Reference**: `src/lib/validation/mcq.ts:8`, `src/lib/validation/mcq.ts:49`
+
+### PowerShell mangles `?` in a double-quoted URL, and `-o $null` corrupts a curl command (found in Phase 3, fixed)
+**Problem**: two scripting faults during the curl run, neither in the routes. A step labelled
+`GET /api/mcq/{id}?include=answers` printed the URL as `http://localhost:3000/api/mcq/=answers`,
+and a cleanup `curl.exe -s -o $null -X DELETE …` silently performed a `GET` instead, leaving a
+question behind in local D1.
+**Cause**: in `"$base/$id?include=answers"` PowerShell reads `$id?include` as the variable
+name, so both the id and the parameter vanish. And `$null` expands to an empty string, so
+`-o $null` becomes `-o` followed by `-X`, which curl reads as the output filename; `DELETE`
+then becomes the URL and the method falls back to `GET`.
+**Solution**: build URLs with the format operator, `"{0}/{1}?include=answers" -f $base, $id`,
+and drop the output to `$null` with a pipeline (`| Out-Null`) rather than `-o`. Both steps
+were rerun correctly and the leftover question deleted; the final counts are 0/0/0.
+**Worth knowing**: a curl step that returns a plausible-looking body can still be the wrong
+request. Check the method and the URL that were actually sent, not just the response.
 
 ### `npm run preview` fails with "Cannot find package 'esbuild'"
 **Problem**: `npm run preview` dies before bundling with
@@ -1872,41 +2260,43 @@ latest Microsoft Visual C++ Redistributable (x64) and reboot.
 
 ## Current Status
 
-**Last Updated**: Aug 31, 2026 (Phase 2 COMPLETED)
-**Current Phase**: Phase 2 — MCQ Service, COMPLETED. Phase 3 not started and will not start
-until Manikanta says "go Phase 3".
+**Last Updated**: Aug 31, 2026 (Phase 3 COMPLETED)
+**Current Phase**: Phase 3 — API Routes and Validation, COMPLETED. Phase 4 not started and
+will not start until Manikanta says "go Phase 4".
 **Branch**: `feature/mcq-crud`, branched from `origin/main` after Sprint 1 merged as
-`1bf5a54`. Three commits, all pushed:
+`1bf5a54`. Four commits, all pushed:
 - `4731310 chore: add phase commit workflow rule`
 - `ca8e9c0 chore: require approval before staging, committing, pushing, or deploying`
 - `bae47e9 phase 1: add MCQ tables migration and schema tests`
+- `5d3bb9a phase 2: add MCQ service with real-SQLite tests`
 
-Phase 2's two files are **uncommitted** and awaiting Manikanta's review of the service code —
+Phase 3's six files are **uncommitted** and awaiting Manikanta's review of the routes —
 nothing has been staged.
-**Status**: The three MCQ tables exist in the local D1 database with the constraints,
-cascades, and indexes this PRD specifies, and every database call for questions, choices and
-attempts now lives behind `mcq-service.ts`. 283 tests pass in 17 files and lint is clean. The
-service is tested against a real SQLite database built from the migration files, and every
-SQL shape it issues was additionally replayed against real local D1. The remote database has
-never been touched.
+**Status**: The three MCQ tables exist in the local D1 database, every database call lives
+behind `mcq-service.ts`, and all six endpoints are live and validated. 369 tests pass in 21
+files and lint is clean. Every documented status code was produced by curl against
+`npm run dev` on the real local D1, and local D1 was left at 0 rows in all three tables. The
+remote database has never been touched and nothing has been deployed.
 **Known caveat**: `npx tsc --noEmit` reports 14 pre-existing errors in Sprint 1's two auth
-route test files, 0 in anything Phase 1 or Phase 2 created. See Troubleshooting for the
-decision needed.
-**Baseline preserved**: Sprint 1's 156 tests still pass. Phase 1 added 77, Phase 2 added 50.
-**Open decisions**: decisions 1 and 3 are now settled and marked as such. Decision 6
-(`sonner`) blocks Phase 4, and decision 7 (`esbuild`) blocks Phase 5. Decisions 4, 5 and 8
-are still open; 5 and 8 are wanted before Phase 3 and Phase 4 respectively, and 4 is now
-effectively closed by Phase 1 having shipped without the snapshot columns.
-**Next Steps**: Manikanta reviews the Phase 2 service code and the proposed commit, approves
-or amends it, then says "go Phase 3". Decision 5 (hiding `isCorrect` behind
-`?include=answers`) is worth settling in the same pass, since Phase 3 implements it.
+route test files, 0 in anything Phases 1 to 3 created. See Troubleshooting for the decision
+needed.
+**Baseline preserved**: Sprint 1's 156 tests still pass. Phase 1 added 77, Phase 2 added 50,
+Phase 3 added 86.
+**Open decisions**: 1 and 3 are settled and marked as such. 2 and 4 are closed by what
+shipped. 5 was built as the PRD specified but is still worth your confirmation. **Decision 6
+(`sonner`) blocks Phase 4** and needs an explicit yes. Decision 7 (`esbuild`) blocks Phase 5.
+Decision 8 is wanted before Phase 4.
+**Next Steps**: Manikanta reviews the Phase 3 routes and the proposed commit, approves or
+amends it, then says "go Phase 4". Decisions 6 and 8 are needed in the same pass, since Phase
+4 cannot start without the `sonner` answer.
 
 **Phase Status Summary**:
 
 - Phase 1 — Schema and Migration: COMPLETED (Aug 31, 2026 — 77 tests, applied to local D1)
 - Phase 2 — MCQ Service: COMPLETED (Aug 31, 2026 — 50 tests against a real SQLite database
   built from the migrations, plus a real local D1 replay of every SQL shape)
-- Phase 3 — API Routes and Validation: PLANNED
+- Phase 3 — API Routes and Validation: COMPLETED (Aug 31, 2026 — 86 tests, plus a curl run
+  covering every documented status code against real local D1)
 - Phase 4 — UI and Polish: PLANNED
 - Phase 5 — End-to-End Verification: PLANNED
 - Close-out — Remote Migration and Deployment: NOT STARTED, requires explicit instruction
