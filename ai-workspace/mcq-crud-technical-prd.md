@@ -1,13 +1,13 @@
 Date created: Aug 31, 2026
-Date last modified: Aug 31, 2026 (Phase 3 COMPLETED — all six endpoints live under
-`src/app/api/mcq/` with Zod validation shared with the Phase 4 form, proven by 86 tests and
-by a curl run covering every documented status code against real local D1. The `PUT` endpoint
-docs and the choice schema were corrected to match replace-all editing. Phase 2 COMPLETED
-earlier the same day — `mcq-service.ts` owns every database call, proven by 50 tests against
-a real SQLite database built from the migration files, settling open decisions 1 and 3. Phase
-1 COMPLETED before that — the three MCQ tables applied to local D1, proven by 77 tests.
-Revised at the start so every commit, push, remote migration, and deploy is proposed and
-waits for Manikanta's explicit approval rather than happening on the agent's own initiative.)
+Date last modified: 1 Sep 2026 (close-out COMPLETED — sprint live. All five implementation
+phases and the close-out are finished. Live URL
+https://aisprints-quizmaker.manikanta-a.workers.dev, deployed version
+`ede197ff-2b66-4349-aadd-353cd7a99a67`. Phase 5 COMPLETED before that — MCQ verified on the
+Workers runtime. Phase 4 COMPLETED — MCQ UI with search, toasts, and confirmation delete.
+Phase 3 COMPLETED — all six endpoints live under `src/app/api/mcq/` with Zod validation
+shared with the form. Phase 2 COMPLETED — `mcq-service.ts` owns every database call. Phase 1
+COMPLETED — the three MCQ tables applied to local D1. Every commit, push, remote migration,
+and deploy waits for Manikanta's explicit approval.)
 
 # MCQ CRUD and Attempts - Technical PRD
 
