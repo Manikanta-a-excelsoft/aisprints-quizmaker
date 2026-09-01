@@ -2886,7 +2886,7 @@ that is sequencing rather than a lock workaround.
 **Current Phase**: Close-out — Remote Migration and Deployment, COMPLETED. All five
 implementation phases and the close-out are finished.
 **Branch**: `feature/mcq-crud`, branched from `origin/main` after Sprint 1 merged as
-`1bf5a54`. Seven commits, all pushed:
+`1bf5a54`. Eight commits, all pushed:
 - `4731310 chore: add phase commit workflow rule`
 - `ca8e9c0 chore: require approval before staging, committing, pushing, or deploying`
 - `bae47e9 phase 1: add MCQ tables migration and schema tests`
@@ -2894,9 +2894,8 @@ implementation phases and the close-out are finished.
 - `e2b866e phase 3: add MCQ API routes and Zod validation`
 - `7194c1c phase 4: add MCQ UI with search, toasts and confirmation delete`
 - `e8baad6 phase 5: verify the MCQ feature end to end on the Workers runtime`
+- `34901b3 close-out: deploy MCQ CRUD and record the live verification`
 
-Close-out documentation and the production walkthrough are **uncommitted** and awaiting
-Manikanta's review — nothing has been staged.
 **Status**: The sprint is live. The three MCQ tables exist on remote D1, the worker is
 deployed, and the same create / attempt / edit / delete flow that Phase 5 walked locally
 has been walked on the production URL.
@@ -2933,10 +2932,9 @@ so the text-snapshot option is worth a real answer before a future sprint report
 5, 6 and 8 are settled and confirmed by the walkthroughs. **Decision 7 (`esbuild`) is still
 open** but did not block the close-out: no `npm install` ran, the junction was intact, and
 `npm run deploy` succeeded. It remains a trap for the next install.
-**Next Steps**: none for this sprint. The close-out commit is proposed and waiting on
-Manikanta. Decision 7 (`esbuild` junction) and the two lint/test nits from Phase 5 are
-still open and can wait for a later cleanup. The natural first task of the next sprint is
-real session management.
+**Next Steps**: none remaining for this sprint's close-out. Decision 7 (`esbuild` junction)
+and the two lint/test nits from Phase 5 are later cleanup, not leftover close-out work. The
+natural first task of the next sprint is real session management.
 
 **Phase Status Summary**:
 
